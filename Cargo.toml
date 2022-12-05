@@ -1,0 +1,54 @@
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "nostr-commander"
+version = "0.0.1"
+edition = "2021"
+description = "simple but convenient CLI-based Nostr client app for publishing,sending and subscribing"
+documentation = "https://docs.rs/nostr-commander"
+readme = "README.md"
+homepage = "https://github.com/8go/nostr-commander-rs"
+repository = "https://github.com/8go/nostr-commander-rs/"
+license = "GPL-3.0-or-later"
+# crates.io only allows 5 keywords
+keywords = ["Nostr", "cli", "command-line-tool", "tool", "messaging"]
+categories = ["command-line-utilities", "network-programming"]
+exclude = ["todo.txt", ".*"]
+publish = true
+
+
+[dependencies]
+anyhow = "1"
+nostr-sdk = "0.5"
+tokio = { version = "1.22", features = ["full"] }
+clap = { version = "4.0", features = ["derive", "color", "wrap_help", "unicode"] }
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+url = { version = "2.3", features = ["serde"] }
+serde_json = "1.0"
+tracing-subscriber = "0.3"
+tracing = "0.1"
+directories = "4.0"
+update-informer = "0.5"
+json = "0.12.4"
+
+
+[dev-dependencies]
+
+[[bin]]
+name = "nostr-commander-rs"
+path = "src/main.rs"
+
+# https://doc.rust-lang.org/cargo/reference/manifest.html#the-badges-section
+[badges]
+# The author wants to share it with the community but is not intending to meet anyone's particular use case.
+maintenance = { status = "experimental" }
+
+
+[profile.release]
+strip = "symbols"
+lto = true
+
+[profile.release-tiny]
+inherits = "release"
+opt-level = "s"

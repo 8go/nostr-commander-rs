@@ -1,39 +1,3 @@
-[![crates.io - Version](
-https://img.shields.io/crates/v/nostr-commander
-)](https://crates.io/crates/nostr-commander)
-[![crates.io - Downloads](
-https://img.shields.io/crates/d/nostr-commander
-)](https://crates.io/crates/nostr-commander)
-
-# nostr-commander-rs
-simple but convenient CLI-based Nostr client app for publishing, sending DMs, as well as following users and channels
-
-nostr-commander is a simple terminal-based CLI client of
-Nostr <https://github.com/nostr-protocol>. It lets you create a
-Nostr user, subscribe and follow posts of other
-users, send encrypted, private DMs to your Nostr friends,
-and much more.
-
-Please help improve the code and add features  :pray:  :clap:
-
-Please give it a star :star: right away on Github so that other people
-can find the project more easily :heart:.
-
-# Example Usage
-
-```
-$ nostr-commander-rs --create-user --name "James Jones" \
-    --display-name Jimmy --about "tech and pizza lover" \
-    --picture "https://i.imgur.com/mIcObyL.jpeg" \
-    --nip05 jim@nostr.example.org \
-    --add-relay "wss://nostr.openchain.fr" "wss://relay.damus.io" # first time only
-$ nostr-commander-rs --publish "Love this protocol"
-$ nostr-commander-rs --dm joe@example.org "How about pizza tonight?"
-```
-
-# Usage
-
-```
 Welcome to "nostr-commander-rs", a Nostr CLI client. ─── On the first run use
 --create-user to create a user. On further runs you can publish notes, send
 private DM messages, etc.  ─── Have a look at the repo
@@ -180,4 +144,3 @@ Options:
           keyboard. E.g. this helps you get event ids for published notices
   -h, --help
           Print help information (use `--help` for more detail)
-```

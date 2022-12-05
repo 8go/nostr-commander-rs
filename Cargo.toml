@@ -2,7 +2,7 @@
 
 [package]
 name = "nostr-commander"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 description = "simple but convenient CLI-based Nostr client app for publishing,sending and subscribing"
 documentation = "https://docs.rs/nostr-commander"

@@ -43,6 +43,7 @@ use update_informer::{registry, Check};
 use url::Url;
 
 use nostr_sdk::{
+    nostr::contact::Contact,
     nostr::key::{FromBech32, KeyError, Keys, ToBech32},
     nostr::message::relay::RelayMessage,
     // nostr::util::nips::nip04::Error as Nip04Error,
@@ -462,7 +463,7 @@ pub struct Args {
     /// is the recipient key, als further arguments are texts to be
     /// sent. E.g. '-dm 'npub1SomeStrangeNumbers "First msg" "Second msg"'.
     // Todo: add '-' to read from stdin or keyboard
-    #[arg(long, alias = "direct", value_name = "ARGS", num_args(0..), )]
+    #[arg(long, alias = "direct", value_name = "KEY+MSGS", num_args(0..), )]
     dm: Vec<String>,
 
     /// Add one or multiple relays. A relay is specified via a URI
@@ -498,7 +499,7 @@ pub struct Args {
     #[arg(long)]
     proxy: Option<SocketAddr>,
 
-    /// Show public key..
+    /// Show public key.
     #[arg(long, default_value_t = false)]
     show_public_key: bool,
 
@@ -546,6 +547,40 @@ pub struct Args {
     /// published notices.
     #[arg(short, long, default_value_t = false)]
     listen: bool,
+
+    /// Add one or more contacts. Must be used in combination with
+    /// --alias, --key, --relay. If you want to add N new contacts,
+    /// use --add-contact and provide exactly N entries in each
+    /// of the 3 extra arguments. E.g. --add-contact --alias jane joe
+    /// --key npub1JanesPublicKey npub1JoesPublicKey
+    /// --relay "wss://janes.relay.org" "wss://joes.relay.org".
+    #[arg(long, default_value_t = false)]
+    add_contact: bool,
+
+    /// Remove one or more contacts. Must be used in combination with
+    /// --alias. For each entry in --alias the corresponding contact will
+    /// be removed. E.g. --remove-contact --alias jane joe.
+    #[arg(long, default_value_t = false)]
+    remove_contact: bool,
+
+    /// Display current contacts.
+    #[arg(long, default_value_t = false)]
+    show_contacts: bool,
+
+    /// Provide one or multiple aliases (nicknames) for arguments
+    /// --add-contact and --remove-contact.
+    #[arg(long, value_name = "ALIAS", num_args(0..), )]
+    alias: Vec<String>,
+
+    /// Provide one or multiple public keys for argument
+    /// --add-contact. They have the form 'npub1SomeStrangeString'.
+    #[arg(long, value_name = "KEY", num_args(0..), )]
+    key: Vec<String>,
+
+    /// Provide one or multiple relays for argument
+    /// --add-contact. They have the form 'wss://some.relay.org'.
+    #[arg(long, value_name = "RELAY", num_args(0..), )]
+    relay: Vec<Url>,
 }
 
 impl Default for Args {
@@ -586,6 +621,12 @@ impl Args {
             whoami: false,
             output: Output::default(),
             listen: false,
+            add_contact: false,
+            remove_contact: false,
+            show_contacts: false,
+            alias: Vec::new(),
+            key: Vec::new(),
+            relay: Vec::new(),
         }
     }
 }
@@ -599,6 +640,7 @@ pub struct Credentials {
     public_key_bech32: String, // npub1...
     relays: Vec<Url>,
     metadata: Metadata,
+    contacts: Vec<Contact>,
 }
 
 impl AsRef<Credentials> for Credentials {
@@ -622,6 +664,7 @@ impl Credentials {
             public_key_bech32: "".to_owned(),
             relays: Vec::new(),
             metadata: Metadata::new(),
+            contacts: Vec::new(),
         }
     }
 
@@ -1008,6 +1051,16 @@ pub(crate) fn is_relay_str(relay: &str) -> bool {
     }
 }
 
+/// is this syntactically a valid relay string?
+pub(crate) fn is_relay_url(relay: &Url) -> bool {
+    if relay.scheme() != "wss" {
+        return false;
+    } else if relay.host_str().is_none() {
+        return false;
+    }
+    true
+}
+
 /// Handle the --create_user CLI argument
 pub(crate) fn cli_create_user(ap: &mut Args) -> Result<(), Error> {
     if !ap.create_user {
@@ -1281,6 +1334,58 @@ pub(crate) async fn cli_dm(client: &Client, ap: &mut Args) -> Result<(), Error> 
     Ok(())
 }
 
+/// Handle the --add-conect CLI argument, write contacts from CLI args into creds data structure
+pub(crate) async fn cli_add_contact(client: &Client, ap: &mut Args) -> Result<(), Error> {
+    // Todo
+    let anum = ap.alias.len();
+    let knum = ap.key.len();
+    let rnum = ap.relay.len();
+    if (anum != knum) || (anum != rnum) || (knum != rnum) {
+        error!(
+            "--alias, --key, and --relay must have the same amount of entries. {:?} {:?} {:?} ",
+            anum, knum, rnum
+        );
+        return Err(Error::MissingCliParameter);
+    }
+
+    let mut i = 0;
+    while i < anum {
+        let key = Keys::from_bech32_public_key(&ap.key[i])?.public_key();
+        if ap.alias[i].trim().is_empty() {
+            error!("Invalid user alias. Cannot be empty. Skipping this contact.");
+            i += 1;
+            continue;
+        }
+        if !is_relay_url(&ap.relay[i]) {
+            error!(
+                "Relay {:?} is not valid. Skipping this contact.",
+                ap.relay[i]
+            );
+            i += 1;
+            continue;
+        }
+        ap.creds.contacts.push(Contact::new(
+            key,
+            ap.relay[i].to_string().clone(),
+            ap.alias[i].trim().to_string(),
+        ));
+        i += 1;
+    }
+    Ok(())
+}
+
+/// Handle the --add-conect CLI argument, write contacts from CLI args into creds data structure
+pub(crate) async fn cli_remove_contact(client: &Client, ap: &mut Args) -> Result<(), Error> {
+    // Todo
+    let anum = ap.alias.len();
+    let mut i = 0;
+    while i < anum {
+        ap.creds.contacts.retain(|x| x.alias != ap.alias[i].trim());
+        i += 1;
+    }
+    Ok(())
+}
+
 /// Utility function to print JSON object as JSON or as plain text
 pub(crate) fn print_json(json_data: &json::JsonValue, output: Output) {
     debug!("{:?}", json_data);
@@ -1500,6 +1605,40 @@ async fn main() -> Result<(), Error> {
             );
             }
         }
+    }
+
+    // Set contacts, first in local file, second in client
+    if ap.add_contact {
+        match crate::cli_add_contact(&client, &mut ap).await {
+            Ok(()) => {
+                info!("add_contact successful.");
+            }
+            Err(ref e) => {
+                error!("add_contact failed. Reported error is: {:?}", e);
+            }
+        }
+    }
+    if ap.remove_contact {
+        match crate::cli_remove_contact(&client, &mut ap).await {
+            Ok(()) => {
+                info!("remove_contact successful.");
+            }
+            Err(ref e) => {
+                error!("remove_contact failed. Reported error is: {:?}", e);
+            }
+        }
+    }
+    ap.creds.contacts.dedup_by(|a, b| a.alias == b.alias);
+    match client.set_contact_list(ap.creds.contacts.clone()).await {
+        Ok(()) => {
+            info!("set_contact_list successful.");
+        }
+        Err(ref e) => {
+            error!("set_contact_list failed. Reported error is: {:?}", e);
+        }
+    }
+    if ap.show_contacts {
+        println!("Contacts: {:?}", ap.creds.contacts);
     }
 
     // Publish a text note

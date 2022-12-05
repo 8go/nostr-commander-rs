@@ -89,7 +89,7 @@ Options:
       --publish-pow [<NOTE>...]
           Publish one or multiple notes with proof-of-work (POW). Use also
           '--pow-difficulty' to specify difficulty
-      --dm [<ARGS>...]
+      --dm [<KEY+MSGS>...]
           Send one or multiple DMs to one given user. DM messages will be
           encrypted and preserve privacy. The single recipient is specified via
           its public key, a string in the form of 'npub1...'. The first
@@ -115,7 +115,7 @@ Options:
       --proxy <PROXY>
           Specify a proxy. Used by --add-relay
       --show-public-key
-          Show public key..
+          Show public key
       --show-secret-key
           Show private, secret key. Protect this key
       --whoami
@@ -145,5 +145,27 @@ Options:
           Listen to events, notifications and messages. This option listens to
           events and messages forever. To stop, type Control-C on your
           keyboard. E.g. this helps you get event ids for published notices
+      --add-contact
+          Add one or more contacts. Must be used in combination with --alias,
+          --key, --relay. If you want to add N new contacts, use --add-contact
+          and provide exactly N entries in each of the 3 extra arguments. E.g.
+          --add-contact --alias jane joe --key npub1JanesPublicKey
+          npub1JoesPublicKey --relay "wss://janes.relay.org"
+          "wss://joes.relay.org"
+      --remove-contact
+          Remove one or more contacts. Must be used in combination with
+          --alias. For each entry in --alias the corresponding contact will be
+          removed. E.g. --remove-contact --alias jane joe
+      --show-contacts
+          Display current contacts
+      --alias [<ALIAS>...]
+          Provide one or multiple aliases (nicknames) for arguments
+          --add-contact and --remove-contact
+      --key [<KEY>...]
+          Provide one or multiple public keys for argument --add-contact. They
+          have the form 'npub1SomeStrangeString'
+      --relay [<RELAY>...]
+          Provide one or multiple relays for argument --add-contact. They have
+          the form 'wss://some.relay.org'
   -h, --help
           Print help information (use `--help` for more detail)

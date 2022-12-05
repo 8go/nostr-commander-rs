@@ -31,7 +31,7 @@ cargo run --release
 
 # generate documentation
 cargo doc
-firefox target/doc/matrix_commander/index.html
+firefox target/doc/nostr_commander/index.html
 
 git status
 git commit -a

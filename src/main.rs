@@ -455,10 +455,14 @@ pub struct Args {
     #[arg(long, alias = "pow", value_name = "NOTE", num_args(0..), )]
     publish_pow: Vec<String>,
 
-    /// Send one or multiple DMs. DM messages will be encrypted and
-    /// preserve privacy.
+    /// Send one or multiple DMs to one given user.
+    /// DM messages will be encrypted and preserve privacy.
+    /// The single recipient is specified via its public key, a
+    /// string in the form of 'npub1...'. The first argument
+    /// is the recipient key, als further arguments are texts to be
+    /// sent. E.g. '-dm 'npub1SomeStrangeNumbers "First msg" "Second msg"'.
     // Todo: add '-' to read from stdin or keyboard
-    #[arg(long, alias = "direct", value_name = "NOTE", num_args(0..), )]
+    #[arg(long, alias = "direct", value_name = "ARGS", num_args(0..), )]
     dm: Vec<String>,
 
     /// Add one or multiple relays. A relay is specified via a URI
@@ -502,7 +506,7 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     show_secret_key: bool,
 
-    /// Print the user name used by "matrix-commander-rs" (itself).
+    /// Print the user name used by "nostr-commander-rs".
     /// One can get this information also by looking at the
     /// credentials file or by using --show-metadata.
     #[arg(long)]
@@ -1259,6 +1263,24 @@ pub(crate) async fn cli_publish_pow(client: &Client, ap: &mut Args) -> Result<()
     Ok(())
 }
 
+/// Handle the --dm CLI argument
+pub(crate) async fn cli_dm(client: &Client, ap: &mut Args) -> Result<(), Error> {
+    // Todo
+    // Publish DM
+    let num = ap.dm.len();
+    if num < 2 {
+        return Err(Error::MissingCliParameter);
+    }
+    let keys = Keys::from_bech32_public_key(&ap.dm[0])?;
+
+    let mut i = 1;
+    while i < num {
+        client.send_direct_msg(&keys, &ap.dm[i]).await?;
+        i += 1;
+    }
+    Ok(())
+}
+
 /// Utility function to print JSON object as JSON or as plain text
 pub(crate) fn print_json(json_data: &json::JsonValue, output: Output) {
     debug!("{:?}", json_data);
@@ -1502,6 +1524,17 @@ async fn main() -> Result<(), Error> {
             }
         }
     }
+    // Send DMs
+    if !ap.dm.is_empty() {
+        match crate::cli_dm(&client, &mut ap).await {
+            Ok(()) => {
+                info!("dm successful.");
+            }
+            Err(ref e) => {
+                error!("dm failed. Reported error is: {:?}", e);
+            }
+        }
+    }
 
     // notices will be published even if we do not go into handle_notification event loop
     if ap.listen {
@@ -1524,7 +1557,7 @@ async fn main() -> Result<(), Error> {
                         // confirmation of notice having been relayed
                         match msg {
                             RelayMessage::Ok {event_id, status, message } => {
-                                println!("OK: Notice was relayed. Event id is {:?}. Status is {:?} and message is {:?}. You can investigate this event by looking it up on https://nostr.com/e/{}", event_id, status, message, event_id.to_string());
+                                println!("OK: Notice or DM was relayed. Event id is {:?}. Status is {:?} and message is {:?}. You can investigate this event by looking it up on https://nostr.com/e/{}", event_id, status, message, event_id.to_string());
                             },
                             RelayMessage::Notice { message } => {
                                 debug!("Notice: {:?}", message);

@@ -5,11 +5,16 @@ https://img.shields.io/crates/v/nostr-commander
 https://img.shields.io/crates/d/nostr-commander
 )](https://crates.io/crates/nostr-commander)
 
+<p>
+<img
+src="https://raw.githubusercontent.com/8go/nostr-commander-rs/master/logos/nostr-commander-rs.svg"
+alt="NC logo" height="150">
+
 # nostr-commander-rs
 simple but convenient CLI-based Nostr client app for publishing, sending DMs, as well as following users and channels
 
 nostr-commander is a simple terminal-based CLI client of
-Nostr <https://github.com/nostr-protocol>. It lets you create a
+Nostr <https://github.com/nostr-protocol/nostr>. It lets you create a
 Nostr user, subscribe and follow posts of other
 users, send encrypted, private DMs to your Nostr friends,
 and much more.
@@ -125,9 +130,12 @@ Options:
       --publish-pow [<NOTE>...]
           Publish one or multiple notes with proof-of-work (POW). Use also
           '--pow-difficulty' to specify difficulty
-      --dm [<NOTE>...]
-          Send one or multiple DMs. DM messages will be encrypted and preserve
-          privacy
+      --dm [<ARGS>...]
+          Send one or multiple DMs to one given user. DM messages will be
+          encrypted and preserve privacy. The single recipient is specified via
+          its public key, a string in the form of 'npub1...'. The first
+          argument is the recipient key, als further arguments are texts to be
+          sent. E.g. '-dm 'npub1SomeStrangeNumbers "First msg" "Second msg"'
       --add-relay [<RELAY_URI>...]
           Add one or multiple relays. A relay is specified via a URI that looks
           like 'wss://some.relay.org'. You can find relays by looking at
@@ -152,9 +160,9 @@ Options:
       --show-secret-key
           Show private, secret key. Protect this key
       --whoami
-          Print the user name used by "matrix-commander-rs" (itself). One can
-          get this information also by looking at the credentials file or by
-          using --show-metadata
+          Print the user name used by "nostr-commander-rs". One can get this
+          information also by looking at the credentials file or by using
+          --show-metadata
   -o, --output <OUTPUT_FORMAT>
           This option decides on how the output is presented. Currently offered
           choices are: 'text', 'json', 'json-max', and 'json-spec'. Provide one

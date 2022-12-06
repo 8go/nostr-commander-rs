@@ -185,7 +185,10 @@ Options:
   -l, --listen
           Listen to events, notifications and messages. This option listens to
           events and messages forever. To stop, type Control-C on your
-          keyboard. E.g. this helps you get event ids for published notices
+          keyboard. You want to listen if you want to get the event ids for
+          published notices. Subscriptions do not automatically turn listening
+          on. If you want to listen to your subscriptions, you must use
+          --listen
       --add-contact
           Add one or more contacts. Must be used in combination with --alias,
           --key, --relay. If you want to add N new contacts, use --add-contact
@@ -208,6 +211,14 @@ Options:
       --relay [<RELAY>...]
           Provide one or multiple relays for argument --add-contact. They have
           the form 'wss://some.relay.org'
+      --subscribe-author [<KEY>...]
+          Subscribe to one or more authors. Specify each author by its public
+          key in form of 'npub1SomePublicKey'. Alternatively you can use the
+          Hex form of the private key
+      --subscribe-pubkey [<KEY>...]
+          Subscribe to one or more public keys. Specify each public key in form
+          of 'npub1SomePublicKey'. Alternatively you can use the Hex form of
+          the private key
   -h, --help
           Print help information (use `--help` for more detail)
 ```

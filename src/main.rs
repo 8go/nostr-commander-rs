@@ -44,11 +44,14 @@ use url::Url;
 
 use nostr_sdk::{
     nostr::contact::Contact,
+    nostr::key::XOnlyPublicKey,
     nostr::key::{FromBech32, KeyError, Keys, ToBech32},
     nostr::message::relay::RelayMessage,
+    nostr::message::subscription::SubscriptionFilter,
     // nostr::util::nips::nip04::Error as Nip04Error,
     nostr::Metadata,
     relay::pool::RelayPoolNotifications,
+    subscription::Subscription,
     Client,
     RelayPoolNotifications::ReceivedEvent,
     RelayPoolNotifications::ReceivedMessage,
@@ -121,8 +124,14 @@ pub enum Error {
     #[error("Listen Failed")]
     ListenFailed,
 
+    #[error("Subscription Failed")]
+    SubscriptionFailed,
+
     #[error("Invalid Client Connection")]
     InvalidClientConnection,
+
+    #[error("Invalid Key")]
+    InvalidKey,
 
     #[error("Unknown CLI parameter")]
     UnknownCliParameter,
@@ -543,8 +552,11 @@ pub struct Args {
 
     /// Listen to events, notifications and messages.
     /// This option listens to events and messages forever. To stop, type
-    /// Control-C on your keyboard. E.g. this helps you get event ids for
-    /// published notices.
+    /// Control-C on your keyboard. You want to listen if you want
+    /// to get the event ids for published notices. 
+    /// Subscriptions do not automatically turn listening on.
+    /// If you want to listen to your subscriptions, you must use
+    /// --listen.
     #[arg(short, long, default_value_t = false)]
     listen: bool,
 
@@ -574,6 +586,7 @@ pub struct Args {
 
     /// Provide one or multiple public keys for argument
     /// --add-contact. They have the form 'npub1SomeStrangeString'.
+    // todo: allow Hex keys
     #[arg(long, value_name = "KEY", num_args(0..), )]
     key: Vec<String>,
 
@@ -581,6 +594,19 @@ pub struct Args {
     /// --add-contact. They have the form 'wss://some.relay.org'.
     #[arg(long, value_name = "RELAY", num_args(0..), )]
     relay: Vec<Url>,
+
+    /// Subscribe to one or more authors. Specify each author by its
+    /// public key in form of 'npub1SomePublicKey'.
+    /// Alternatively you can use the Hex form of the private key.
+    #[arg(long, value_name = "KEY", num_args(0..), )]
+    subscribe_author: Vec<String>,
+
+    /// Subscribe to one or more public keys. Specify each
+    /// public key in form of 'npub1SomePublicKey'.
+    /// Alternatively you can use the Hex form of the private key.
+    #[arg(long, value_name = "KEY", num_args(0..), )]
+    subscribe_pubkey: Vec<String>,
+    // todo: unsubscribe
 }
 
 impl Default for Args {
@@ -627,6 +653,8 @@ impl Args {
             alias: Vec::new(),
             key: Vec::new(),
             relay: Vec::new(),
+            subscribe_author: Vec::new(),
+            subscribe_pubkey: Vec::new(),
         }
     }
 }
@@ -641,6 +669,8 @@ pub struct Credentials {
     relays: Vec<Url>,
     metadata: Metadata,
     contacts: Vec<Contact>,
+    subscribed_authors: Vec<XOnlyPublicKey>,
+    subscribed_pubkeys: Vec<XOnlyPublicKey>,
 }
 
 impl AsRef<Credentials> for Credentials {
@@ -665,6 +695,8 @@ impl Credentials {
             relays: Vec::new(),
             metadata: Metadata::new(),
             contacts: Vec::new(),
+            subscribed_authors: Vec::new(),
+            subscribed_pubkeys: Vec::new(),
         }
     }
 
@@ -1374,16 +1406,113 @@ pub(crate) async fn cli_add_contact(client: &Client, ap: &mut Args) -> Result<()
     Ok(())
 }
 
-/// Handle the --add-conect CLI argument, write contacts from CLI args into creds data structure
+/// Handle the --add-conect CLI argument, remove CLI args contacts from creds data structure
 pub(crate) async fn cli_remove_contact(client: &Client, ap: &mut Args) -> Result<(), Error> {
     // Todo
-    let anum = ap.alias.len();
+    let num = ap.alias.len();
     let mut i = 0;
-    while i < anum {
+    while i < num {
         ap.creds.contacts.retain(|x| x.alias != ap.alias[i].trim());
         i += 1;
     }
     Ok(())
+}
+
+/// Handle the --subscribe-author CLI argument, moving authors from CLI args into creds data structure
+pub(crate) async fn cli_subscribe_author(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
+    let mut err_count = 0usize;
+    let num = ap.subscribe_author.len();
+    let mut authors = Vec::new();
+    let mut i = 0;
+    while i < num {
+        match str_to_pubkey(&ap.subscribe_author[i]) {
+            Ok(pkey) => {
+                authors.push(pkey);
+                debug!(
+                    "Valid key added to subscription filter. Key {:?}, {:?}.",
+                    &ap.subscribe_author[i], pkey
+                );
+            }
+            Err(ref e) => {
+                error!(
+                    "Error: Invalid key {:?}. Not added to subscription filter.",
+                    &ap.subscribe_author[i]
+                );
+                err_count += 1;
+            }
+        }
+        i += 1;
+    }
+    ap.creds.subscribed_authors.append(&mut authors);
+    ap.creds.subscribed_authors.dedup_by(|a, b| a == b);
+    if err_count != 0 {
+        Err(Error::SubscriptionFailed)
+    } else {
+        Ok(())
+    }
+}
+
+/// Convert npub1... Bech32 key or Hex key into a XOnlyPublicKey
+pub(crate) fn str_to_pubkey(s: &str) -> Result<XOnlyPublicKey, Error> {
+    match Keys::from_bech32_public_key(s) {
+        Ok(keys) => {
+            debug!(
+                "Valid key in Bech32 format: Npub {:?}, Hex {:?}",
+                s,
+                keys.public_key().to_string()
+            );
+            return Ok(keys.public_key());
+        }
+        Err(ref e) => match XOnlyPublicKey::from_str(s) {
+            Ok(pkey) => {
+                debug!(
+                    "Valid key in Hex format: Hex {:?}, Npub {:?}",
+                    s,
+                    pkey.to_bech32().unwrap()
+                );
+                return Ok(pkey);
+            }
+            Err(ref e) => {
+                error!("Error: Invalid key {:?}. Reported error: {:?}.", s, e);
+                return Err(Error::InvalidKey);
+            }
+        },
+    }
+}
+
+/// Handle the --subscribe-pubkey CLI argument, moving pkeys from CLI args into creds data structure
+pub(crate) async fn cli_subscribe_pubkey(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
+    let mut err_count = 0usize;
+    let num = ap.subscribe_pubkey.len();
+    let mut pubkeys = Vec::new();
+    let mut i = 0;
+    while i < num {
+        match str_to_pubkey(&ap.subscribe_pubkey[i]) {
+            Ok(pkey) => {
+                pubkeys.push(pkey);
+                debug!(
+                    "Valid key added to subscription filter. Key {:?}, Hex: {:?}.",
+                    &ap.subscribe_pubkey[i],
+                    pkey.to_string()
+                );
+            }
+            Err(ref e) => {
+                error!(
+                    "Error: Invalid key {:?}. Not added to subscription filter.",
+                    &ap.subscribe_pubkey[i]
+                );
+                err_count += 1;
+            }
+        }
+        i += 1;
+    }
+    ap.creds.subscribed_pubkeys.append(&mut pubkeys);
+    ap.creds.subscribed_pubkeys.dedup_by(|a, b| a == b);
+    if err_count != 0 {
+        Err(Error::SubscriptionFailed)
+    } else {
+        Ok(())
+    }
 }
 
 /// Utility function to print JSON object as JSON or as plain text
@@ -1640,6 +1769,7 @@ async fn main() -> Result<(), Error> {
     if ap.show_contacts {
         println!("Contacts: {:?}", ap.creds.contacts);
     }
+    // ap.creds.save(get_credentials_actual_path(&ap))?; // do it later
 
     // Publish a text note
     if !ap.publish.is_empty() {
@@ -1675,8 +1805,62 @@ async fn main() -> Result<(), Error> {
         }
     }
 
+    // Subscribe authors
+    if !ap.subscribe_author.is_empty() {
+        match crate::cli_subscribe_author(&mut client, &mut ap).await {
+            Ok(()) => {
+                info!("subscribe_author successful.");
+            }
+            Err(ref e) => {
+                error!("subscribe_author failed. Reported error is: {:?}", e);
+            }
+        }
+    }
+    match client
+        .subscribe(vec![
+            SubscriptionFilter::new().authors(ap.creds.subscribed_authors.clone())
+        ])
+        .await
+    {
+        Ok(()) => {
+            info!("subscribe to authors successful.");
+        }
+        Err(ref e) => {
+            error!("subscribe to authors failed. Reported error is: {:?}", e);
+        }
+    }
+    // Subscribe keys
+    if !ap.subscribe_pubkey.is_empty() {
+        match crate::cli_subscribe_pubkey(&mut client, &mut ap).await {
+            Ok(()) => {
+                info!("subscribe_pubkey successful.");
+            }
+            Err(ref e) => {
+                error!("subscribe_pubkey failed. Reported error is: {:?}", e);
+            }
+        }
+    }
+    match client
+        .subscribe(vec![
+            SubscriptionFilter::new().pubkeys(ap.creds.subscribed_pubkeys.clone())
+        ])
+        .await
+    {
+        Ok(()) => {
+            info!("subscribe to pubkeys successful.");
+        }
+        Err(ref e) => {
+            error!("subscribe to pubkeys failed. Reported error is: {:?}", e);
+        }
+    }
+    ap.creds.save(get_credentials_actual_path(&ap))?;
+
     // notices will be published even if we do not go into handle_notification event loop
-    if ap.listen {
+    // Do not automatically listen when subscriptions exist, only listen to subscriptions if --listen is set.
+    if ap.listen
+        // || !ap.creds.subscribed_authors.is_empty()
+        // || !ap.creds.subscribed_pubkeys.is_empty()
+    {
         let num = ap.publish.len() + ap.publish_pow.len();
         info!(
             "You should be receiving {:?} 'OK' messages with event ids, one for each notice that has been relayed.",

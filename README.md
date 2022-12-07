@@ -11,18 +11,51 @@ src="https://raw.githubusercontent.com/8go/nostr-commander-rs/master/logos/nostr
 alt="NC logo" height="150">
 
 # nostr-commander-rs
-simple but convenient CLI-based Nostr client app for publishing, sending DMs, as well as following users and channels
+
+TLDR: simple but convenient CLI-based Nostr client app for publishing, sending DMs, as well as following users and channels
 
 nostr-commander is a simple terminal-based CLI client of
-Nostr <https://github.com/nostr-protocol/nostr>. It lets you create a
+Nostr <https://github.com/nostr-protocol/nostr> written in Rust. 
+It lets you create a
 Nostr user, subscribe and follow posts of other
-users, send encrypted, private DMs to your Nostr friends,
+users, send private (encrypted) DMs to your Nostr friends,
 and much more.
 
 Please help improve the code and add features  :pray:  :clap:
+Any contribution is welcome.
 
 Please give it a star :star: right away on Github so that other people
 can find the project more easily :heart:.
+
+# What's in the name?
+
+nostr-command*(lin)*er. A word play.
+
+# Audience, Use cases
+
+- for terminal lovers
+- for admins, for automating tasks
+- for writing shell scripts to interact with the `Nostr` network
+
+# Links
+
+- https://github.com/8go/nostr-commander-rs
+- https://crates.io/crates/nostr-commander
+- https://docs.rs/crate/nostr-commander
+
+# Installation
+
+- Go to Github releases
+- Build from source
+    - Install the Rust compiler and Cargo using `rustup.rs`. See https://rustup.rs/.
+    - Clone this repository (this command will clone to your home directory):
+        - `git clone https://github.com/8go/nostr-commander-rs.git ~/nostr-commander-rs
+    - Change directory into repository directory
+        - `cd ~/nostr-commander-rs`
+    - Run the build command with the release flag
+        - `cargo build --release`
+    - Once program is compiled, the executable will be available in target/release/nostr-commander-rs.
+        - `./target/release/nostr-commander-rs --version # run it and get version`
 
 # Example Usage
 
@@ -33,7 +66,7 @@ $ nostr-commander-rs --create-user --name "James Jones" \
     --nip05 jim@nostr.example.org \
     --add-relay "wss://nostr.openchain.fr" "wss://relay.damus.io" # first time only
 $ nostr-commander-rs --publish "Love this protocol"
-$ nostr-commander-rs --dm joe@example.org "How about pizza tonight?"
+$ nostr-commander-rs --dm joe "How about pizza tonight?"
 ```
 
 # Usage
@@ -133,9 +166,11 @@ Options:
       --dm [<KEY+MSGS>...]
           Send one or multiple DMs to one given user. DM messages will be
           encrypted and preserve privacy. The single recipient is specified via
-          its public key, a string in the form of 'npub1...'. The first
-          argument is the recipient key, als further arguments are texts to be
-          sent. E.g. '-dm 'npub1SomeStrangeNumbers "First msg" "Second msg"'
+          its public key, a string in the form of 'npub1...', a Hex key, or an
+          alias from one of your contacts. The first argument is the recipient,
+          all further arguments are texts to be sent. E.g. '-dm
+          'npub1SomeStrangeNumbers "First msg" "Second msg"' or 'dm joe "How
+          about pizza tonight?"'
       --add-relay [<RELAY_URI>...]
           Add one or multiple relays. A relay is specified via a URI that looks
           like 'wss://some.relay.org'. You can find relays by looking at
@@ -195,7 +230,8 @@ Options:
           and provide exactly N entries in each of the 3 extra arguments. E.g.
           --add-contact --alias jane joe --key npub1JanesPublicKey
           npub1JoesPublicKey --relay "wss://janes.relay.org"
-          "wss://joes.relay.org"
+          "wss://joes.relay.org". Aliases must be unique. Alias can be seen as
+          a nickname
       --remove-contact
           Remove one or more contacts. Must be used in combination with
           --alias. For each entry in --alias the corresponding contact will be

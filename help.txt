@@ -92,9 +92,11 @@ Options:
       --dm [<KEY+MSGS>...]
           Send one or multiple DMs to one given user. DM messages will be
           encrypted and preserve privacy. The single recipient is specified via
-          its public key, a string in the form of 'npub1...'. The first
-          argument is the recipient key, als further arguments are texts to be
-          sent. E.g. '-dm 'npub1SomeStrangeNumbers "First msg" "Second msg"'
+          its public key, a string in the form of 'npub1...', a Hex key, or an
+          alias from one of your contacts. The first argument is the recipient,
+          all further arguments are texts to be sent. E.g. '-dm
+          'npub1SomeStrangeNumbers "First msg" "Second msg"' or 'dm joe "How
+          about pizza tonight?"'
       --add-relay [<RELAY_URI>...]
           Add one or multiple relays. A relay is specified via a URI that looks
           like 'wss://some.relay.org'. You can find relays by looking at
@@ -154,7 +156,8 @@ Options:
           and provide exactly N entries in each of the 3 extra arguments. E.g.
           --add-contact --alias jane joe --key npub1JanesPublicKey
           npub1JoesPublicKey --relay "wss://janes.relay.org"
-          "wss://joes.relay.org"
+          "wss://joes.relay.org". Aliases must be unique. Alias can be seen as
+          a nickname
       --remove-contact
           Remove one or more contacts. Must be used in combination with
           --alias. For each entry in --alias the corresponding contact will be

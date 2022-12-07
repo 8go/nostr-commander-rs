@@ -118,6 +118,9 @@ pub enum Error {
     #[error("Add Relay Failed")]
     AddRelayFailed,
 
+    #[error("DM Failed")]
+    DmFailed,
+
     #[error("Send Failed")]
     SendFailed,
 
@@ -468,9 +471,11 @@ pub struct Args {
     /// Send one or multiple DMs to one given user.
     /// DM messages will be encrypted and preserve privacy.
     /// The single recipient is specified via its public key, a
-    /// string in the form of 'npub1...'. The first argument
-    /// is the recipient key, als further arguments are texts to be
-    /// sent. E.g. '-dm 'npub1SomeStrangeNumbers "First msg" "Second msg"'.
+    /// string in the form of 'npub1...', a Hex key, or an alias from
+    /// one of your contacts. The first argument
+    /// is the recipient, all further arguments are texts to be
+    /// sent. E.g. '-dm 'npub1SomeStrangeNumbers "First msg" "Second msg"'
+    /// or 'dm joe "How about pizza tonight?"'.
     // Todo: add '-' to read from stdin or keyboard
     #[arg(long, alias = "direct", value_name = "KEY+MSGS", num_args(0..), )]
     dm: Vec<String>,
@@ -553,7 +558,7 @@ pub struct Args {
     /// Listen to events, notifications and messages.
     /// This option listens to events and messages forever. To stop, type
     /// Control-C on your keyboard. You want to listen if you want
-    /// to get the event ids for published notices. 
+    /// to get the event ids for published notices.
     /// Subscriptions do not automatically turn listening on.
     /// If you want to listen to your subscriptions, you must use
     /// --listen.
@@ -566,6 +571,7 @@ pub struct Args {
     /// of the 3 extra arguments. E.g. --add-contact --alias jane joe
     /// --key npub1JanesPublicKey npub1JoesPublicKey
     /// --relay "wss://janes.relay.org" "wss://joes.relay.org".
+    /// Aliases must be unique. Alias can be seen as a nickname.
     #[arg(long, default_value_t = false)]
     add_contact: bool,
 
@@ -1349,26 +1355,56 @@ pub(crate) async fn cli_publish_pow(client: &Client, ap: &mut Args) -> Result<()
 }
 
 /// Handle the --dm CLI argument
+/// Publish DM
 pub(crate) async fn cli_dm(client: &Client, ap: &mut Args) -> Result<(), Error> {
-    // Todo
-    // Publish DM
+    let mut err_count = 0usize;
     let num = ap.dm.len();
     if num < 2 {
         return Err(Error::MissingCliParameter);
     }
-    let keys = Keys::from_bech32_public_key(&ap.dm[0])?;
-
-    let mut i = 1;
-    while i < num {
-        client.send_direct_msg(&keys, &ap.dm[i]).await?;
-        i += 1;
+    match cstr_to_pubkey(ap, ap.dm[0].trim()) {
+        Ok(pk) => {
+            let keys = Keys::from_public_key(pk);
+            let mut i = 1;
+            while i < num {
+                match client.send_direct_msg(&keys, &ap.dm[i]).await {
+                    Ok(()) => debug!(
+                        "DM message number {:?} sent successfully. {:?}",
+                        i, &ap.dm[i]
+                    ),
+                    Err(ref e) => {
+                        err_count += 1;
+                        error!("DM message number {:?} failed. {:?}", i, &ap.dm[i]);
+                    }
+                }
+                i += 1;
+            }
+        }
+        Err(ref e) => {
+            error!(
+                "Error: Not a valid key. Cannot send this DM. Aborting. Key {:?}, 1st Msg {:?} ",
+                ap.dm[0].trim(),
+                ap.dm[1]
+            );
+            return Err(Error::InvalidKey);
+        }
     }
-    Ok(())
+    if err_count != 0 {
+        Err(Error::DmFailed)
+    } else {
+        Ok(())
+    }
+}
+
+/// Get contact for given alias.
+/// Returns None if alias does not exist in contact list.
+pub(crate) fn get_contact(ap: &Args, alias: &str) -> Option<Contact> {
+    ap.creds.contacts.iter().find(|s| s.alias == alias).cloned()
 }
 
 /// Handle the --add-conect CLI argument, write contacts from CLI args into creds data structure
 pub(crate) async fn cli_add_contact(client: &Client, ap: &mut Args) -> Result<(), Error> {
-    // Todo
+    let mut err_count = 0usize;
     let anum = ap.alias.len();
     let knum = ap.key.len();
     let rnum = ap.relay.len();
@@ -1379,12 +1415,17 @@ pub(crate) async fn cli_add_contact(client: &Client, ap: &mut Args) -> Result<()
         );
         return Err(Error::MissingCliParameter);
     }
-
     let mut i = 0;
     while i < anum {
-        let key = Keys::from_bech32_public_key(&ap.key[i])?.public_key();
         if ap.alias[i].trim().is_empty() {
             error!("Invalid user alias. Cannot be empty. Skipping this contact.");
+            err_count += 1;
+            i += 1;
+            continue;
+        }
+        if get_contact(ap, ap.alias[i].trim()).is_some() {
+            error!("Invalid user alias. Alias already exists. Alias must be unique. Skipping this contact.");
+            err_count += 1;
             i += 1;
             continue;
         }
@@ -1393,22 +1434,39 @@ pub(crate) async fn cli_add_contact(client: &Client, ap: &mut Args) -> Result<()
                 "Relay {:?} is not valid. Skipping this contact.",
                 ap.relay[i]
             );
+            err_count += 1;
             i += 1;
             continue;
         }
-        ap.creds.contacts.push(Contact::new(
-            key,
-            ap.relay[i].to_string().clone(),
-            ap.alias[i].trim().to_string(),
-        ));
+        let key = &ap.key[i];
+        match str_to_pubkey(key) {
+            Ok(pkey) => {
+                debug!("Valid key for contact. Key {:?}, {:?}.", key, pkey);
+                ap.creds.contacts.push(Contact::new(
+                    pkey,
+                    ap.relay[i].to_string().clone(),
+                    ap.alias[i].trim().to_string(),
+                ));
+                debug!("Added contact. Key {:?}, {:?}.", key, pkey);
+            }
+            Err(ref e) => {
+                error!("Error: Invalid key {:?}. Skipping this contact.", key);
+                err_count += 1;
+                i += 1;
+                continue;
+            }
+        }
         i += 1;
     }
-    Ok(())
+    if err_count != 0 {
+        Err(Error::SubscriptionFailed)
+    } else {
+        Ok(())
+    }
 }
 
 /// Handle the --add-conect CLI argument, remove CLI args contacts from creds data structure
 pub(crate) async fn cli_remove_contact(client: &Client, ap: &mut Args) -> Result<(), Error> {
-    // Todo
     let num = ap.alias.len();
     let mut i = 0;
     while i < num {
@@ -1452,7 +1510,17 @@ pub(crate) async fn cli_subscribe_author(client: &mut Client, ap: &mut Args) -> 
     }
 }
 
+/// Convert npub1... Bech32 key or Hex key or contact alias into a XOnlyPublicKey
+/// Returns Error if neither valid Bech32, nor Hex key, nor contact alias.
+pub(crate) fn cstr_to_pubkey(ap: &Args, s: &str) -> Result<XOnlyPublicKey, Error> {
+    match get_contact(ap, s) {
+        Some(c) => Ok(c.pk),
+        None => str_to_pubkey(s),
+    }
+}
+
 /// Convert npub1... Bech32 key or Hex key into a XOnlyPublicKey
+/// Returns Error if neither valid Bech32 nor Hex key.
 pub(crate) fn str_to_pubkey(s: &str) -> Result<XOnlyPublicKey, Error> {
     match Keys::from_bech32_public_key(s) {
         Ok(keys) => {
@@ -1858,8 +1926,8 @@ async fn main() -> Result<(), Error> {
     // notices will be published even if we do not go into handle_notification event loop
     // Do not automatically listen when subscriptions exist, only listen to subscriptions if --listen is set.
     if ap.listen
-        // || !ap.creds.subscribed_authors.is_empty()
-        // || !ap.creds.subscribed_pubkeys.is_empty()
+    // || !ap.creds.subscribed_authors.is_empty()
+    // || !ap.creds.subscribed_pubkeys.is_empty()
     {
         let num = ap.publish.len() + ap.publish_pow.len();
         info!(

@@ -29,7 +29,7 @@ can find the project more easily :heart:.
 
 # What's in the name?
 
-nostr-command*(lin)*er. A word play.
+nostr-command(lin)er. A word play.
 
 # Audience, Use cases
 
@@ -57,6 +57,63 @@ nostr-command*(lin)*er. A word play.
     - Once program is compiled, the executable will be available in target/release/nostr-commander-rs.
         - `./target/release/nostr-commander-rs --version # run it and get version`
 
+# Config File
+
+You don't need to know any of this. This is just for the curious ones.
+
+The config file looks something like this. If you want to do some quick testing, 
+you can copy and paste this config file to get going real fast.
+
+```
+{
+  "secret_key_bech32": "nsec1yljk9us0e3whjnzysu6pqjhnw5wglkr6hvx4vj376fs0sfaxze6qvx5f5x",
+  "public_key_bech32": "npub1af7ep6s5esrgtc2c7tlvd3v4jpna44qf6nhan8tek6h505nwrvgq38nwz6",
+  "relays": [
+    "wss://relay.nostr.info/",
+    "wss://nostr.ono.re/",
+    "wss://nostr.rocks/",
+    "wss://nostr-pub.wellorder.net/",
+    "wss://nostr.semisol.dev/",
+    "wss://nostr-relay.wlvs.space/"
+  ],
+  "metadata": {
+    "name": "James Jones",
+    "display_name": "Jim",
+    "about": "tech nerd and nostr lover"
+  },
+  "contacts": [
+    {
+      "pk": "887645fef0ce0c3c1218d2f5d8e6132a19304cdc57cd20281d082f38cfea0072",
+      "relay_url": "wss://nostr.openchain.fr/",
+      "alias": "HackerNews"
+    },
+    {
+      "pk": "6b0d4c8d9dc59e110d380b0429a02891f1341a0fa2ba1b1cf83a3db4d47e3964",
+      "relay_url": "wss://nostr.openchain.fr/",
+      "alias": "dergigi"
+    },
+    {
+      "pk": "3235036bd0957dfb27ccda02d452d7c763be40c91a1ac082ba6983b25238388c",
+      "relay_url": "wss://nostr.openchain.fr/",
+      "alias": "vishalxl"
+    },
+    {
+      "pk": "32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245",
+      "relay_url": "wss://nostr.openchain.fr/",
+      "alias": "jb55.com"
+    }
+   ],
+  "subscribed_authors": [
+    "6b0d4c8d9dc59e110d380b0429a02891f1341a0fa2ba1b1cf83a3db4d47e3964",
+    "3235036bd0957dfb27ccda02d452d7c763be40c91a1ac082ba6983b25238388c"
+  ],
+  "subscribed_pubkeys": [
+    "887645fef0ce0c3c1218d2f5d8e6132a19304cdc57cd20281d082f38cfea0072",
+    "32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245"
+  ]
+}
+```
+
 # Example Usage
 
 ```
@@ -65,8 +122,10 @@ $ nostr-commander-rs --create-user --name "James Jones" \
     --picture "https://i.imgur.com/mIcObyL.jpeg" \
     --nip05 jim@nostr.example.org \
     --add-relay "wss://nostr.openchain.fr" "wss://relay.damus.io" # first time only
+$ nostr-commander-rs --add-contact --key "887645fef0ce0c3c1218d2f5d8e6132a19304cdc57cd20281d082f38cfea0072" --alias HackerNews --relay "wss://nostr.openchain.fr/"
 $ nostr-commander-rs --publish "Love this protocol"
 $ nostr-commander-rs --dm joe "How about pizza tonight?"
+$ nostr-commander-rs --subscribe-author npub1xtscya34g58tk0z605fvr788k263gsu6cy9x0mhnm87echrgufzsevkk5s
 ```
 
 # Usage

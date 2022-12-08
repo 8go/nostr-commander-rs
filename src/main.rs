@@ -8,19 +8,13 @@
 //! Please help improve the code and add features  :pray:  :clap:
 //!
 //! Usage:
-//! - nostr-commander-rs --create-user --name "James Jones" \
-//!     --display-name Jimmy --about "tech and pizza lover" \
-//!     --picture "https://i.imgur.com/mIcObyL.jpeg" \
-//!     --nip05 jim@nostr.example.org \
-//!     --add-relay "wss://nostr.openchain.fr" "wss://relay.damus.io" # first time only
-//! - nostr-commander-rs --publish "Love this protocol"
-//! - nostr-commander-rs --dm joe@example.org "How about pizza tonight?"
-//!
-//! For more information, see the README.md
+//! - run `nostr-commander-rs --help`
+//! 
+//! For more information, see read the README.md
 //! <https://github.com/8go/nostr-commander-rs/blob/main/README.md>
 //! file.
 
-// #![allow(dead_code)] // crate-level allow  // Todo
+#![allow(dead_code)] // crate-level allow  // Todo
 #![allow(unused_variables)] // Todo
 #![allow(unused_imports)] // Todo
 
@@ -43,7 +37,10 @@ use update_informer::{registry, Check};
 use url::Url;
 
 use nostr_sdk::{
-    nostr::contact::Contact,
+    nostr::event::kind::Kind,
+nostr::event::kind::KindBase,
+        nostr::contact::Contact,
+    nostr::event::tag::TagKind,
     nostr::key::XOnlyPublicKey,
     nostr::key::{FromBech32, KeyError, Keys, ToBech32},
     nostr::message::relay::RelayMessage,
@@ -1396,10 +1393,67 @@ pub(crate) async fn cli_dm(client: &Client, ap: &mut Args) -> Result<(), Error> 
     }
 }
 
+/// Is key in subscribed_authors list?
+pub(crate) fn is_subscribed_author(ap: &Args, pkey: &XOnlyPublicKey) -> bool {
+    ap.creds.subscribed_authors.contains(pkey)
+}
+
 /// Get contact for given alias.
 /// Returns None if alias does not exist in contact list.
-pub(crate) fn get_contact(ap: &Args, alias: &str) -> Option<Contact> {
+pub(crate) fn get_contact_by_alias(ap: &Args, alias: &str) -> Option<Contact> {
     ap.creds.contacts.iter().find(|s| s.alias == alias).cloned()
+}
+
+/// Get contact for given pubkey.
+/// Returns None if pubkey does not exist in contact list.
+pub(crate) fn get_contact_by_key(ap: &Args, pkey: XOnlyPublicKey) -> Option<Contact> {
+    ap.creds.contacts.iter().find(|s| s.pk == pkey).cloned()
+}
+
+/// Get contact alias for given pubkey, or if not in contacts return given pubkey.
+/// Returns alias if contact with this pubkey exists.
+/// Returns input pubkey if no contact with this pubkey exists.
+pub(crate) fn get_contact_alias_or_keystr_by_key(ap: &Args, pkey: XOnlyPublicKey) -> String {
+    match get_contact_by_key(ap, pkey) {
+        Some(c) => c.alias,
+        None => pkey.to_string(),
+    }
+}
+
+/// Get contact alias for given pubkey, or if not in contacts return None.
+/// Returns Some(alias) if contact with this pubkey exists.
+/// Returns None if no contact with this pubkey exists.
+pub(crate) fn get_contact_alias_by_key(ap: &Args, pkey: XOnlyPublicKey) -> Option<String> {
+    match get_contact_by_key(ap, pkey) {
+        Some(c) => Some(c.alias),
+        None => None,
+    }
+}
+
+/// Get contact alias for given pubkey string (string of XOnlyPublicKey), or if not in contacts return given pubkey.
+/// Returns alias if contact with this pubkey exists.
+/// Returns input pubkey if no contact with this pubkey exists.
+pub(crate) fn get_contact_alias_or_keystr_by_keystr(ap: &Args, pkeystr: &str) -> String {
+    match XOnlyPublicKey::from_str(pkeystr) {
+        Ok(pkey) => match get_contact_by_key(ap, pkey) {
+            Some(c) => c.alias,
+            None => pkey.to_string(),
+        },
+        Err(_) => pkeystr.to_string(),
+    }
+}
+
+/// Get contact alias for given pubkey string (string of XOnlyPublicKey), or if not in contacts return None.
+/// Returns Some(alias) if contact with this pubkey exists.
+/// Returns None if no contact with this pubkey exists.
+pub(crate) fn get_contact_alias_by_keystr(ap: &Args, pkeystr: &str) -> Option<String> {
+    match XOnlyPublicKey::from_str(pkeystr) {
+        Ok(pkey) => match get_contact_by_key(ap, pkey) {
+            Some(c) => Some(c.alias),
+            None => None,
+        },
+        Err(_) => None,
+    }
 }
 
 /// Handle the --add-conect CLI argument, write contacts from CLI args into creds data structure
@@ -1423,7 +1477,7 @@ pub(crate) async fn cli_add_contact(client: &Client, ap: &mut Args) -> Result<()
             i += 1;
             continue;
         }
-        if get_contact(ap, ap.alias[i].trim()).is_some() {
+        if get_contact_by_alias(ap, ap.alias[i].trim()).is_some() {
             error!("Invalid user alias. Alias already exists. Alias must be unique. Skipping this contact.");
             err_count += 1;
             i += 1;
@@ -1513,7 +1567,7 @@ pub(crate) async fn cli_subscribe_author(client: &mut Client, ap: &mut Args) -> 
 /// Convert npub1... Bech32 key or Hex key or contact alias into a XOnlyPublicKey
 /// Returns Error if neither valid Bech32, nor Hex key, nor contact alias.
 pub(crate) fn cstr_to_pubkey(ap: &Args, s: &str) -> Result<XOnlyPublicKey, Error> {
-    match get_contact(ap, s) {
+    match get_contact_by_alias(ap, s) {
         Some(c) => Ok(c.pk),
         None => str_to_pubkey(s),
     }
@@ -1937,24 +1991,70 @@ async fn main() -> Result<(), Error> {
         // Handle notifications
         match client
             .handle_notifications(|notification| {
-                debug!("Notification: {:?}", notification);
+                // debug!("Notification: {:?}", notification);
                 match notification {
                     ReceivedEvent(ev) => {
-                        debug!("Event: {:?}", ev);
+                        debug!("Event-Event: content {:?}, kind {:?}", ev.content, ev.kind);
                     }
                     ReceivedMessage(msg) => {
-                        debug!("Message: {:?}", msg);
-                        // Notification: ReceivedMessage(Ok { event_id: 123, status: true, message: "" })
-                        // confirmation of notice having been relayed
+                        // debug!("Message: {:?}", msg);
                         match msg {
                             RelayMessage::Ok {event_id, status, message } => {
-                                println!("OK: Notice or DM was relayed. Event id is {:?}. Status is {:?} and message is {:?}. You can investigate this event by looking it up on https://nostr.com/e/{}", event_id, status, message, event_id.to_string());
+                                // Notification: ReceivedMessage(Ok { event_id: 123, status: true, message: "" })
+                                // confirmation of notice having been relayed
+                                info!("Message-OK: Notice or DM was relayed. Event id is {:?}. Status is {:?} and message is {:?}. You can investigate this event by looking it up on https://nostr.com/e/{}", event_id, status, message, event_id.to_string());
+                                println!("Message-OK: Notice or DM was relayed. Event id is {:?}. Status is {:?} and message is {:?}. You can investigate this event by looking it up on https://nostr.com/e/{}", event_id, status, message, event_id.to_string());
                             },
                             RelayMessage::Notice { message } => {
-                                debug!("Notice: {:?}", message);
+                                debug!("Message-Notice: {:?}", message);
                             }
+                            RelayMessage::Event {event, subscription_id}=> {
+                                // kind: Base(ChannelMessage) and Base(TextNote) and Base(Reaction)
+                                let mut tags = "".to_owned();
+                                let mut first = true;
+                                for t in &event.tags {
+                                    match t.kind() {
+                                        Ok(TagKind::P) => {
+                                            match t.content() {
+                                                Some(c) => {
+                                                    debug!("tag: {:?}", get_contact_alias_or_keystr_by_keystr(&ap, c));
+                                                    match get_contact_alias_by_keystr(&ap, c) {
+                                                        Some(a) => {
+                                                            if !first { tags += ", "; };
+                                                            tags += &a;
+                                                            first = false;
+                                                            },
+                                                        _ => ()
+                                                    }
+                                                }
+                                                None => ()
+                                            }
+                                        },
+                                        Ok(TagKind::E) => (),
+                                        Ok(TagKind::Nonce) => (),
+                                        Err(_) => ()
+                                    }
+                                }
+                                info!("Message-Event: content {:?}, kind {:?}, from pubkey {:?}, with tags {:?}", event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey), event.tags);
+                                let mut key_author = "key";
+                                if is_subscribed_author(&ap, &event.pubkey) {
+                                            key_author = "author";
+                                            tags = get_contact_alias_or_keystr_by_key(&ap, event.pubkey);
+                                        };
+                                match event.kind {
+                                    Kind::Base(KindBase::ContactList) => (),
+                                    Kind::Base(KindBase::Reaction) => (),
+                                    Kind::Base(KindBase::TextNote) => {
+                                        println!("Subscription by {} ({}): content {:?}, kind {:?}, from pubkey {:?}", key_author, tags, event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey));
+                                    },
+                                    Kind::Base(KindBase::ChannelMessage) => {
+                                        println!("Subscription by {} ({}): content {:?}, kind {:?}, from pubkey {:?}", key_author, tags, event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey));
+                                    },
+                                    _ => ()
+                                }
+                            },
                             RelayMessage::Empty => (),
-                            _ => (),
+                            RelayMessage::EndOfStoredEvents {subscription_id} =>  (),
                         }
                     }
                 }

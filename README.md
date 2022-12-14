@@ -69,12 +69,7 @@ you can copy and paste this config file to get going real fast.
   "secret_key_bech32": "nsec1yljk9us0e3whjnzysu6pqjhnw5wglkr6hvx4vj376fs0sfaxze6qvx5f5x",
   "public_key_bech32": "npub1af7ep6s5esrgtc2c7tlvd3v4jpna44qf6nhan8tek6h505nwrvgq38nwz6",
   "relays": [
-    "wss://relay.nostr.info/",
-    "wss://nostr.ono.re/",
-    "wss://nostr.rocks/",
-    "wss://nostr-pub.wellorder.net/",
-    "wss://nostr.semisol.dev/",
-    "wss://nostr-relay.wlvs.space/"
+    "wss://nostr-pub.wellorder.net/"
   ],
   "metadata": {
     "name": "James Jones",
@@ -84,22 +79,22 @@ you can copy and paste this config file to get going real fast.
   "contacts": [
     {
       "pk": "887645fef0ce0c3c1218d2f5d8e6132a19304cdc57cd20281d082f38cfea0072",
-      "relay_url": "wss://nostr.openchain.fr/",
+      "relay_url": "wss://nostr-pub.wellorder.net/",
       "alias": "HackerNews"
     },
     {
       "pk": "6b0d4c8d9dc59e110d380b0429a02891f1341a0fa2ba1b1cf83a3db4d47e3964",
-      "relay_url": "wss://nostr.openchain.fr/",
+      "relay_url": "wss://nostr-pub.wellorder.net/",
       "alias": "dergigi"
     },
     {
       "pk": "3235036bd0957dfb27ccda02d452d7c763be40c91a1ac082ba6983b25238388c",
-      "relay_url": "wss://nostr.openchain.fr/",
+      "relay_url": "wss://nostr-pub.wellorder.net/",
       "alias": "vishalxl"
     },
     {
       "pk": "32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245",
-      "relay_url": "wss://nostr.openchain.fr/",
+      "relay_url": "wss://nostr-pub.wellorder.net/",
       "alias": "jb55.com"
     }
    ],
@@ -314,6 +309,33 @@ Options:
           Subscribe to one or more public keys. Specify each public key in form
           of 'npub1SomePublicKey'. Alternatively you can use the Hex form of
           the private key
+      --limit-number <NUMBER>
+          Limit the number of messages to receive when subscribing. By default
+          there is no limit (0) [default: 0]
+      --limit-days <DAYS>
+          Limit the messages received to the last N days when subscribing. By
+          default there is no limit (0) [default: 0]
+      --limit-hours <HOURS>
+          Limit the messages received to the last N hours when subscribing. By
+          default there is no limit (0) [default: 0]
+      --limit-future-days <DAYS>
+          Limit the messages received to the next N days when subscribing. Stop
+          receiving N days in the future. By default there is no limit (0) [default:
+          0]
+      --limit-future-hours <HOURS>
+          Limit the messages received to the last N hours when subscribing.
+          Stop receiving N hours in the future. By default there is no limit
+          (0) [default: 0]
   -h, --help
           Print help information (use `--help` for more detail)
 ```
+
+# Other Related Projects
+
+- Look here for an [nostr awesome list](https://github.com/aljazceru/awesome-nostr).
+- `nostr-commander` isn't quite what you wanted?
+  Check out [nostr_console](https://github.com/vishalxl/nostr_console).
+- Not into `nostr` but into Matrix?
+  Check out [matrix-commander](https://github.com/8go/matrix-commander)
+  and [matrix-commander-rs](https://github.com/8go/matrix-commander-rs).
+- Also [matrix-nostr-bridge](matrix-nostr-bridge).

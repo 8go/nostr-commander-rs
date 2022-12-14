@@ -9,7 +9,7 @@
 //!
 //! Usage:
 //! - run `nostr-commander-rs --help`
-//! 
+//!
 //! For more information, see read the README.md
 //! <https://github.com/8go/nostr-commander-rs/blob/main/README.md>
 //! file.
@@ -22,7 +22,10 @@
 use clap::{ColorChoice, Parser, ValueEnum};
 use directories::ProjectDirs;
 // use mime::Mime;
+use chrono::{Duration, Utc};
+// use json;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::env;
 use std::fmt::{self, Debug};
 use std::fs::{self, File};
@@ -31,15 +34,15 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use thiserror::Error;
-use tracing::{debug, enabled, error, info, warn, Level};
+use tracing::{debug, enabled, error, info, trace, warn, Level};
 use tracing_subscriber;
 use update_informer::{registry, Check};
 use url::Url;
 
 use nostr_sdk::{
+    nostr::contact::Contact,
     nostr::event::kind::Kind,
-nostr::event::kind::KindBase,
-        nostr::contact::Contact,
+    nostr::event::kind::KindBase,
     nostr::event::tag::TagKind,
     nostr::key::XOnlyPublicKey,
     nostr::key::{FromBech32, KeyError, Keys, ToBech32},
@@ -275,9 +278,9 @@ enum Output {
 
 /// is_ functions for the enum
 impl Output {
-    // pub fn is_text(&self) -> bool {
-    //     self == &Self::Text
-    // }
+    pub fn is_text(&self) -> bool {
+        self == &Self::Text
+    }
 
     // pub fn is_json_spec(&self) -> bool { self == &Self::JsonSpec }
 }
@@ -487,6 +490,8 @@ pub struct Args {
     #[arg(long, value_name = "RELAY_URI", num_args(0..), )]
     add_relay: Vec<String>,
 
+    // todo remove-relay
+
     // /// Specify one or multiple tag to attach to notes ot DMs.
     // #[arg(long)]
     // tag: Vec<String>,
@@ -609,7 +614,37 @@ pub struct Args {
     /// Alternatively you can use the Hex form of the private key.
     #[arg(long, value_name = "KEY", num_args(0..), )]
     subscribe_pubkey: Vec<String>,
-    // todo: unsubscribe
+    // todo: unsubscribe_pubkey
+    // todo unsubscribe_author
+    // todo mpub1-to-hex
+    // todo hex-to-npub1
+    //
+    /// Limit the number of messages to receive when subscribing.
+    /// By default there is no limit (0).
+    #[arg(long, value_name = "NUMBER", default_value_t = 0)]
+    limit_number: u16,
+
+    /// Limit the messages received to the last N days when subscribing.
+    /// By default there is no limit (0).
+    #[arg(long, alias = "since-days", value_name = "DAYS", default_value_t = 0)]
+    limit_days: i64,
+
+    /// Limit the messages received to the last N hours when subscribing.
+    /// By default there is no limit (0).
+    #[arg(long, alias = "since-hours", value_name = "HOURS", default_value_t = 0)]
+    limit_hours: i64,
+
+    /// Limit the messages received to the next N days when subscribing.
+    /// Stop receiving N days in the future.
+    /// By default there is no limit (0).
+    #[arg(long, alias = "until-days", value_name = "DAYS", default_value_t = 0)]
+    limit_future_days: i64,
+
+    /// Limit the messages received to the last N hours when subscribing.
+    /// Stop receiving N hours in the future.
+    /// By default there is no limit (0).
+    #[arg(long, alias = "until-hours", value_name = "HOURS", default_value_t = 0)]
+    limit_future_hours: i64,
 }
 
 impl Default for Args {
@@ -628,6 +663,7 @@ impl Args {
             log_level: LogLevel::None,
             verbose: 0u8,
             // plain: false,
+            // credentials file path
             credentials: get_credentials_default_path(),
             create_user: false,
             delete_user: false,
@@ -658,6 +694,11 @@ impl Args {
             relay: Vec::new(),
             subscribe_author: Vec::new(),
             subscribe_pubkey: Vec::new(),
+            limit_number: 0,
+            limit_days: 0,
+            limit_hours: 0,
+            limit_future_days: 0,
+            limit_future_hours: 0,
         }
     }
 }
@@ -1638,38 +1679,55 @@ pub(crate) async fn cli_subscribe_pubkey(client: &mut Client, ap: &mut Args) -> 
 }
 
 /// Utility function to print JSON object as JSON or as plain text
-pub(crate) fn print_json(json_data: &json::JsonValue, output: Output) {
-    debug!("{:?}", json_data);
+/// depth: depth in nesting, on first call use 0.
+// see https://github.com/serde-rs/json
+pub(crate) fn print_json(jsonv: &Value, output: Output, depth: u32, separator: &str) {
+    trace!("{:?}", jsonv);
     match output {
         Output::Text => {
-            let mut first = true;
-            for (key, val) in json_data.entries() {
-                if first {
-                    first = false;
-                } else {
+            if depth != 0 {
+                print!("    ");
+            }
+            if jsonv.is_object() {
+                // if it is an object, check recursively
+                for (key, val) in jsonv.as_object().unwrap() {
+                    print!("{}:", key);
+                    print_json(val, output, depth + 1, separator);
                     print!("    ");
                 }
-                print!("{}:", key);
-                if val.is_object() {
-                    // if it is an object, check recursively
-                    print_json(val, output);
-                } else if val.is_boolean() {
-                    print!("    {}", val);
-                } else if val.is_null() {
-                    print!("    "); // print nothing
-                } else if val.is_string() {
-                    print!("    {}", val);
-                } else if val.is_number() {
-                    print!("    {}", val);
-                } else if val.is_array() {
-                    print!("    [{}]", val);
+            } else if jsonv.is_boolean() {
+                print!("{}", jsonv);
+            } else if jsonv.is_null() {
+                print!(""); // print nothing
+            } else if jsonv.is_string() {
+                print!("{}", jsonv);
+            } else if jsonv.is_number() {
+                print!("{}", jsonv);
+            } else if jsonv.is_array() {
+                print!("[ ");
+                print!("{}", separator);
+                let mut i = 0;
+                while i < jsonv.as_array().unwrap().len() {
+                    if i > 0 {
+                        print!(",    ");
+                    }
+                    print_json(&jsonv[i], output, depth + 1, separator);
+                    i += 1;
+                    println!();
                 }
+                print!("{}", separator);
+                print!(" ]");
+            } else {
+                debug!("not implemented type in print_json()");
+                print!("{}", jsonv.to_string(),);
             }
-            println!();
+            if depth == 0 {
+                println!();
+            }
         }
         Output::JsonSpec => (),
         _ => {
-            println!("{}", json_data.dump(),);
+            println!("{}", jsonv.to_string(),);
         }
     }
 }
@@ -1677,11 +1735,13 @@ pub(crate) fn print_json(json_data: &json::JsonValue, output: Output) {
 /// Handle the --whoami CLI argument
 pub(crate) fn cli_whoami(ap: &Args) -> Result<(), Error> {
     print_json(
-        &json::object!(
-            name: ap.creds.metadata.name.clone(),
-            display_name: ap.creds.metadata.display_name.clone(),
-        ),
+        &json!({
+            "name": ap.creds.metadata.name.clone(),
+            "display_name": ap.creds.metadata.display_name.clone(),
+        }),
         ap.output,
+        0,
+        "",
     );
     Ok(())
 }
@@ -1808,7 +1868,7 @@ async fn main() -> Result<(), Error> {
             );
         }
     }
-
+    // todo clean up code to separate better local action from client/remote action
     // Add relays, if --create-user the relays have already been added
     if !ap.add_relay.is_empty() && !ap.create_user {
         match crate::cli_add_relay(&mut client, &mut ap) {
@@ -1821,18 +1881,31 @@ async fn main() -> Result<(), Error> {
         }
     }
 
-    // Connect to relays, WAIT for connection, and keep connection alive
-    // match client.connect().await {
-    match client.connect_and_wait().await {
-        Ok(()) => {
-            info!("connect successful.");
-        }
-        Err(ref e) => {
-            error!(
-                "connect failed. Could not connect to relays. Reported error is: {:?}",
-                e
-            );
-            return Err(Error::CannotConnectToRelays);
+    if ap.listen
+        || !ap.publish_pow.is_empty()
+        || !ap.publish.is_empty()
+        || !ap.dm.is_empty()
+        || !ap.subscribe_author.is_empty()
+        || !ap.subscribe_pubkey.is_empty()
+    {
+        // todo avoid connect_...()  call if not relay action is needed and everything can be done locally.
+        // todo avoid connect...() if no client is needed.
+        //
+        // Connect to relays, WAIT for connection, and keep connection alive
+        // todo only use the wait version if there is no -l and there is some publish
+        // also do a wait on create-user ?
+        // match client.connect().await {
+        match client.connect_and_wait().await {
+            Ok(()) => {
+                info!("connect successful.");
+            }
+            Err(ref e) => {
+                error!(
+                    "connect failed. Could not connect to relays. Reported error is: {:?}",
+                    e
+                );
+                return Err(Error::CannotConnectToRelays);
+            }
         }
     }
 
@@ -1889,7 +1962,13 @@ async fn main() -> Result<(), Error> {
         }
     }
     if ap.show_contacts {
-        println!("Contacts: {:?}", ap.creds.contacts);
+        if ap.output.is_text() {
+            for c in &ap.creds.contacts {
+                print_json(&json!(c), ap.output, 0, "");
+            }
+        } else {
+            print_json(&json!({"contacts": ap.creds.contacts}), ap.output, 0, "");
+        }
     }
     // ap.creds.save(get_credentials_actual_path(&ap))?; // do it later
 
@@ -1931,67 +2010,104 @@ async fn main() -> Result<(), Error> {
     if !ap.subscribe_author.is_empty() {
         match crate::cli_subscribe_author(&mut client, &mut ap).await {
             Ok(()) => {
-                info!("subscribe_author successful.");
+                debug!("subscribe_author successful. Subscriptions synchronized with credentials file.");
             }
             Err(ref e) => {
                 error!("subscribe_author failed. Reported error is: {:?}", e);
             }
         }
     }
-    match client
-        .subscribe(vec![
-            SubscriptionFilter::new().authors(ap.creds.subscribed_authors.clone())
-        ])
-        .await
-    {
-        Ok(()) => {
-            info!("subscribe to authors successful.");
+    if !ap.creds.subscribed_authors.is_empty() {
+        let mut asf: SubscriptionFilter;
+        asf = SubscriptionFilter::new().authors(ap.creds.subscribed_authors.clone());
+        if ap.limit_number != 0 {
+            asf = asf.limit(ap.limit_number);
         }
-        Err(ref e) => {
-            error!("subscribe to authors failed. Reported error is: {:?}", e);
+        if ap.limit_days != 0 {
+            asf = asf.since((Utc::now() - Duration::days(ap.limit_days)).timestamp() as u64);
+        }
+        if ap.limit_hours != 0 {
+            asf = asf.since((Utc::now() - Duration::hours(ap.limit_hours)).timestamp() as u64);
+        }
+        if ap.limit_future_days != 0 {
+            asf = asf.until((Utc::now() - Duration::days(ap.limit_future_days)).timestamp() as u64);
+        }
+        if ap.limit_future_hours != 0 {
+            asf =
+                asf.until((Utc::now() - Duration::hours(ap.limit_future_hours)).timestamp() as u64);
+        }
+        match client.subscribe(vec![asf]).await {
+            Ok(()) => {
+                info!("subscribe to authors successful.");
+            }
+            Err(ref e) => {
+                error!("subscribe to authors failed. Reported error is: {:?}", e);
+            }
         }
     }
     // Subscribe keys
     if !ap.subscribe_pubkey.is_empty() {
         match crate::cli_subscribe_pubkey(&mut client, &mut ap).await {
             Ok(()) => {
-                info!("subscribe_pubkey successful.");
+                debug!("subscribe_pubkey successful. Subscriptions synchronized with credentials file.");
             }
             Err(ref e) => {
                 error!("subscribe_pubkey failed. Reported error is: {:?}", e);
             }
         }
     }
-    match client
-        .subscribe(vec![
-            SubscriptionFilter::new().pubkeys(ap.creds.subscribed_pubkeys.clone())
-        ])
-        .await
-    {
-        Ok(()) => {
-            info!("subscribe to pubkeys successful.");
+    if !ap.creds.subscribed_pubkeys.is_empty() {
+        let mut ksf: SubscriptionFilter;
+        ksf = SubscriptionFilter::new().pubkeys(ap.creds.subscribed_pubkeys.clone());
+        if ap.limit_number != 0 {
+            ksf = ksf.limit(ap.limit_number);
         }
-        Err(ref e) => {
-            error!("subscribe to pubkeys failed. Reported error is: {:?}", e);
+        if ap.limit_days != 0 {
+            ksf = ksf.since((Utc::now() - Duration::days(ap.limit_days)).timestamp() as u64);
+        }
+        if ap.limit_hours != 0 {
+            ksf = ksf.since((Utc::now() - Duration::hours(ap.limit_hours)).timestamp() as u64);
+        }
+        if ap.limit_future_days != 0 {
+            ksf = ksf.until((Utc::now() - Duration::days(ap.limit_future_days)).timestamp() as u64);
+        }
+        if ap.limit_future_hours != 0 {
+            ksf =
+                ksf.until((Utc::now() - Duration::hours(ap.limit_future_hours)).timestamp() as u64);
+        }
+        match client.subscribe(vec![ksf]).await {
+            Ok(()) => {
+                info!("subscribe to pubkeys successful.");
+            }
+            Err(ref e) => {
+                error!("subscribe to pubkeys failed. Reported error is: {:?}", e);
+            }
         }
     }
     ap.creds.save(get_credentials_actual_path(&ap))?;
 
     // notices will be published even if we do not go into handle_notification event loop
-    // Do not automatically listen when subscriptions exist, only listen to subscriptions if --listen is set.
+    // Design choice: Do not automatically listen when subscriptions exist, only listen to subscriptions if --listen is set.
     if ap.listen
     // || !ap.creds.subscribed_authors.is_empty()
     // || !ap.creds.subscribed_pubkeys.is_empty()
     {
         let num = ap.publish.len() + ap.publish_pow.len();
-        info!(
-            "You should be receiving {:?} 'OK' messages with event ids, one for each notice that has been relayed.",
-            num
-        );
+        if num == 1 {
+            info!(
+                "You should be receiving {:?} 'OK' message with event id for the notice once it has been relayed.",
+                num
+            );
+        } else if num > 1 {
+            info!(
+                "You should be receiving {:?} 'OK' messages with event ids, one for each notice that has been relayed.",
+                num
+            );
+        }
         // Handle notifications
         match client
             .handle_notifications(|notification| {
-                // debug!("Notification: {:?}", notification);
+                trace!("Notification: {:?}", notification);
                 match notification {
                     ReceivedEvent(ev) => {
                         debug!("Event-Event: content {:?}, kind {:?}", ev.content, ev.kind);
@@ -2003,7 +2119,17 @@ async fn main() -> Result<(), Error> {
                                 // Notification: ReceivedMessage(Ok { event_id: 123, status: true, message: "" })
                                 // confirmation of notice having been relayed
                                 info!("Message-OK: Notice or DM was relayed. Event id is {:?}. Status is {:?} and message is {:?}. You can investigate this event by looking it up on https://nostr.com/e/{}", event_id, status, message, event_id.to_string());
-                                println!("Message-OK: Notice or DM was relayed. Event id is {:?}. Status is {:?} and message is {:?}. You can investigate this event by looking it up on https://nostr.com/e/{}", event_id, status, message, event_id.to_string());
+                                print_json(
+                                    &json!({"event_type": "RelayMessage::Ok",
+                                        "event_type_meaning": "Notice or DM was relayed successfully.",
+                                        "event_id": event_id,
+                                        "status": status,
+                                        "message": message,
+                                        "event_url": "https://nostr.com/e/".to_string() + &event_id.to_string(),
+                                        "event_url_meaning": "You can investigate this event by looking up the event URL.",
+                                    }) ,
+                                    ap.output,0,""
+                                );
                             },
                             RelayMessage::Notice { message } => {
                                 debug!("Message-Notice: {:?}", message);
@@ -2017,7 +2143,7 @@ async fn main() -> Result<(), Error> {
                                         Ok(TagKind::P) => {
                                             match t.content() {
                                                 Some(c) => {
-                                                    debug!("tag: {:?}", get_contact_alias_or_keystr_by_keystr(&ap, c));
+                                                    trace!("tag: {:?}", get_contact_alias_or_keystr_by_keystr(&ap, c));
                                                     match get_contact_alias_by_keystr(&ap, c) {
                                                         Some(a) => {
                                                             if !first { tags += ", "; };
@@ -2035,26 +2161,63 @@ async fn main() -> Result<(), Error> {
                                         Err(_) => ()
                                     }
                                 }
-                                info!("Message-Event: content {:?}, kind {:?}, from pubkey {:?}, with tags {:?}", event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey), event.tags);
+                                trace!("Message-Event: content {:?}, kind {:?}, from pubkey {:?}, with tags {:?}", event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey), event.tags);
                                 let mut key_author = "key";
                                 if is_subscribed_author(&ap, &event.pubkey) {
                                             key_author = "author";
                                             tags = get_contact_alias_or_keystr_by_key(&ap, event.pubkey);
                                         };
                                 match event.kind {
-                                    Kind::Base(KindBase::ContactList) => (),
-                                    Kind::Base(KindBase::Reaction) => (),
+                                    Kind::Base(KindBase::ContactList) => {
+                                        debug!("Received Message-Event ContactList");
+                                    },
+                                    Kind::Base(KindBase::Reaction) => {
+                                        debug!("Received Message-Event Reaction: content {:?}", event.content);
+                                    },
                                     Kind::Base(KindBase::TextNote) => {
-                                        println!("Subscription by {} ({}): content {:?}, kind {:?}, from pubkey {:?}", key_author, tags, event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey));
+                                        info!("Subscription by {} ({}): content {:?}, kind {:?}, from pubkey {:?}", key_author, tags, event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey));
+                                        print_json(
+                                            &json!({
+                                                "event_type": "RelayMessage::Event",
+                                                "event_type_meaning": "Message was received because of subscription.",
+                                                "subscribed_by": key_author,
+                                                "author": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
+                                                "content": event.content,
+                                                // "kind": event.kind, // writes integer like '1'
+                                                "kind": format!("{:?}",event.kind), // writes text like "Base(TextNote)"
+                                                "from_alias": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
+                                                "from_pubkey": event.pubkey,
+                                                "tags": tags
+                                            }) ,
+                                            ap.output,0,""
+                                        );
                                     },
                                     Kind::Base(KindBase::ChannelMessage) => {
-                                        println!("Subscription by {} ({}): content {:?}, kind {:?}, from pubkey {:?}", key_author, tags, event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey));
+                                        warn!("Subscription by {} ({}): content {:?}, kind {:?}, from pubkey {:?}", key_author, tags, event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey));
+                                        print_json(
+                                            &json!({
+                                                "event_type": "RelayMessage::Event",
+                                                "event_type_meaning": "Message was received because of subscription.",
+                                                "subscribed_by": key_author,
+                                                "author": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
+                                                "content": event.content,
+                                                "kind": format!("{:?}",event.kind),
+                                                "from_alias": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
+                                                "from_pubkey": event.pubkey,
+                                                "tags": tags
+                                            }) ,
+                                            ap.output,0,""
+                                        );
                                     },
                                     _ => ()
                                 }
                             },
-                            RelayMessage::Empty => (),
-                            RelayMessage::EndOfStoredEvents {subscription_id} =>  (),
+                            RelayMessage::Empty => {
+                                        debug!("Received Message-Event Empty");
+                                    },
+                            RelayMessage::EndOfStoredEvents {subscription_id} =>  {
+                                        debug!("Received Message-Event EndOfStoredEvents");
+                                    },
                         }
                     }
                 }

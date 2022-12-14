@@ -181,5 +181,22 @@ Options:
           Subscribe to one or more public keys. Specify each public key in form
           of 'npub1SomePublicKey'. Alternatively you can use the Hex form of
           the private key
+      --limit-number <NUMBER>
+          Limit the number of messages to receive when subscribing. By default
+          there is no limit (0) [default: 0]
+      --limit-days <DAYS>
+          Limit the messages received to the last N days when subscribing. By
+          default there is no limit (0) [default: 0]
+      --limit-hours <HOURS>
+          Limit the messages received to the last N hours when subscribing. By
+          default there is no limit (0) [default: 0]
+      --limit-future-days <DAYS>
+          Limit the messages received to the next N days when subscribing. Stop
+          receiving N days in the future. By default there is no limit (0) [default:
+          0]
+      --limit-future-hours <HOURS>
+          Limit the messages received to the last N hours when subscribing.
+          Stop receiving N hours in the future. By default there is no limit
+          (0) [default: 0]
   -h, --help
           Print help information (use `--help` for more detail)

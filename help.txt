@@ -85,10 +85,39 @@ Options:
           be queried via the keyboard. If you want to set it to empty and not
           be queried, provide an empty string ''
   -p, --publish [<NOTE>...]
-          Publish one or multiple notes
+          Publish one or multiple notes. Notes data must not be binary data, it
+          must be text. Input piped via stdin can additionally be specified
+          with the special character '-'. If you want to feed a text message
+          into the program via a pipe, via stdin, then specify the special
+          character '-'. If your message is literally a single letter '-' then
+          use an escaped '\-' or a quoted "\-". Depending on your shell, '-'
+          might need to be escaped. If this is the case for your shell, use the
+          escaped '\-' instead of '-' and '\\-' instead of '\-'. However,
+          depending on which shell you are using and if you are quoting with
+          double quotes or with single quotes, you may have to add backslashes
+          to achieve the proper escape sequences. If you want to read the
+          message from the keyboard use '-' and do not pipe anything into
+          stdin, then a message will be requested and read from the keyboard.
+          Keyboard input is limited to one line. The stdin indicator '-' may
+          appear in any position, i.e. --publish 'start' '-' 'end' will send 3
+          messages out of which the second one is read from stdin. The stdin
+          indicator '-' may appear only once overall in all arguments. '-'
+          reads everything that is in the pipe in one swoop and sends a single
+          message. Similar to '-', another shortcut character is '_'. The
+          special character '_' is used for streaming data via a pipe on stdin.
+          With '_' the stdin pipe is read line-by-line and each line is treated
+          as a separate message and sent right away. The program waits for pipe
+          input until the pipe is closed. E.g. Imagine a tool that generates
+          output sporadically 24x7. It can be piped, i.e. streamed, into
+          nostr-commander, and nostr-commander stays active, sending all input
+          instantly. If you want to send the literal letter '_' then escape it
+          and send '\_'. '_' can be used only once. And either '-' or '_' can
+          be used
       --publish-pow [<NOTE>...]
           Publish one or multiple notes with proof-of-work (POW). Use also
-          '--pow-difficulty' to specify difficulty
+          '--pow-difficulty' to specify difficulty. See also '--publish' to see
+          how shortcut characters '-' (pipe) and '_' (streamed pipe) are
+          handled
       --dm [<KEY+MSGS>...]
           Send one or multiple DMs to one given user. DM messages will be
           encrypted and preserve privacy. The single recipient is specified via
@@ -96,7 +125,8 @@ Options:
           alias from one of your contacts. The first argument is the recipient,
           all further arguments are texts to be sent. E.g. '-dm
           'npub1SomeStrangeNumbers "First msg" "Second msg"' or 'dm joe "How
-          about pizza tonight?"'
+          about pizza tonight?"'. See also '--publish' to see how shortcut
+          characters '-' (pipe) and '_' (streamed pipe) are handled
       --add-relay [<RELAY_URI>...]
           Add one or multiple relays. A relay is specified via a URI that looks
           like 'wss://some.relay.org'. You can find relays by looking at

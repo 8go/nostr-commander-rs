@@ -2,7 +2,7 @@
 
 [package]
 name = "nostr-commander"
-version = "0.0.8"
+version = "0.0.9"
 edition = "2021"
 description = "simple but convenient CLI-based Nostr client app for publishing,sending and subscribing"
 documentation = "https://docs.rs/nostr-commander"
@@ -32,6 +32,7 @@ directories = "4.0"
 update-informer = "0.5"
 chrono = "0.4"
 json = "0.12"
+atty = "0.2"
 
 
 [dev-dependencies]

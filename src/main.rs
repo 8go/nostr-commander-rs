@@ -18,7 +18,7 @@
 #![allow(unused_variables)] // Todo
 #![allow(unused_imports)] // Todo
 
-// use atty::Stream;
+use atty::Stream;
 use clap::{ColorChoice, Parser, ValueEnum};
 use directories::ProjectDirs;
 // use mime::Mime;
@@ -117,6 +117,12 @@ pub enum Error {
 
     #[error("Add Relay Failed")]
     AddRelayFailed,
+
+    #[error("Publish Failed")]
+    PublishFailed,
+
+    #[error("Publish POW Failed")]
+    PublishPowFailed,
 
     #[error("DM Failed")]
     DmFailed,
@@ -458,13 +464,50 @@ pub struct Args {
     nip05: Option<String>,
 
     /// Publish one or multiple notes.
-    // Todo: add '-' to read from stdin or keyboard
+    /// Notes data must not be binary data, it
+    /// must be text.
+    /// Input piped via stdin can additionally be specified with the
+    /// special character '-'.
+    /// If you want to feed a text message into the program
+    /// via a pipe, via stdin, then specify the special
+    /// character '-'.
+    /// If your message is literally a single letter '-' then use an
+    /// escaped '\-' or a quoted "\-".
+    /// Depending on your shell, '-' might need to be escaped.
+    /// If this is the case for your shell, use the escaped '\-'
+    /// instead of '-' and '\\-' instead of '\-'.
+    /// However, depending on which shell you are using and if you are
+    /// quoting with double quotes or with single quotes, you may have
+    /// to add backslashes to achieve the proper escape sequences.
+    /// If you want to read the message from
+    /// the keyboard use '-' and do not pipe anything into stdin, then
+    /// a message will be requested and read from the keyboard.
+    /// Keyboard input is limited to one line.
+    /// The stdin indicator '-' may appear in any position,
+    /// i.e. --publish 'start' '-' 'end'
+    /// will send 3 messages out of which the second one is read from stdin.
+    /// The stdin indicator '-' may appear only once overall in all arguments.
+    /// '-' reads everything that is in the pipe in one swoop and
+    /// sends a single message.
+    /// Similar to '-', another shortcut character
+    /// is '_'. The special character '_' is used for
+    /// streaming data via a pipe on stdin. With '_' the stdin
+    /// pipe is read line-by-line and each line is treated as
+    /// a separate message and sent right away. The program
+    /// waits for pipe input until the pipe is closed. E.g.
+    /// Imagine a tool that generates output sporadically
+    /// 24x7. It can be piped, i.e. streamed, into
+    /// nostr-commander, and nostr-commander stays active, sending
+    /// all input instantly. If you want to send the literal
+    /// letter '_' then escape it and send '\_'. '_' can be
+    /// used only once. And either '-' or '_' can be used.
     #[arg(short, long, value_name = "NOTE", num_args(0..), )]
     publish: Vec<String>,
 
     /// Publish one or multiple notes with proof-of-work (POW).
     /// Use also '--pow-difficulty' to specify difficulty.
-    // Todo: add '-' to read from stdin or keyboard
+    /// See also '--publish' to see how shortcut characters
+    /// '-' (pipe) and '_' (streamed pipe) are handled.
     #[arg(long, alias = "pow", value_name = "NOTE", num_args(0..), )]
     publish_pow: Vec<String>,
 
@@ -476,7 +519,8 @@ pub struct Args {
     /// is the recipient, all further arguments are texts to be
     /// sent. E.g. '-dm 'npub1SomeStrangeNumbers "First msg" "Second msg"'
     /// or 'dm joe "How about pizza tonight?"'.
-    // Todo: add '-' to read from stdin or keyboard
+    /// See also '--publish' to see how shortcut characters
+    /// '-' (pipe) and '_' (streamed pipe) are handled.
     #[arg(long, alias = "direct", value_name = "KEY+MSGS", num_args(0..), )]
     dm: Vec<String>,
 
@@ -1364,38 +1408,353 @@ pub(crate) fn cli_add_relay(client: &mut Client, ap: &mut Args) -> Result<(), Er
     }
 }
 
+fn trim_newline(s: &mut String) -> &mut String {
+    if s.ends_with('\n') {
+        s.pop();
+        if s.ends_with('\r') {
+            s.pop();
+        }
+    }
+    return s;
+}
+
 /// Handle the --publish CLI argument
+/// Publish notes.
 pub(crate) async fn cli_publish(client: &Client, ap: &mut Args) -> Result<(), Error> {
-    // Todo
-    // Publish notes
+    let mut err_count = 0usize;
     let num = ap.publish.len();
     let mut i = 0;
     while i < num {
-        client.publish_text_note(&ap.publish[i], &[]).await?;
+        let note = &ap.publish[i];
+        trace!("publish: {:?}", note);
+        if note.is_empty() {
+            info!("Skipping empty text note.");
+            i += 1;
+            continue;
+        };
+        if note == "--" {
+            info!("Skipping '--' text note as these are used to separate arguments.");
+            i += 1;
+            continue;
+        };
+        // - map to - (stdin pipe)
+        // \- maps to text r'-', a 1-letter message
+        let fnote = if note == r"-" {
+            let mut line = String::new();
+            if atty::is(Stream::Stdin) {
+                print!("Message: ");
+                std::io::stdout()
+                    .flush()
+                    .expect("error: could not flush stdout");
+                io::stdin().read_line(&mut line)?;
+            } else {
+                io::stdin().read_to_string(&mut line)?;
+            }
+            line
+        } else if note == r"_" {
+            let mut eof = false;
+            while !eof {
+                let mut line = String::new();
+                match io::stdin().read_line(&mut line) {
+                    // If this function returns Ok(0), the stream has reached EOF.
+                    Ok(n) => {
+                        if n == 0 {
+                            eof = true;
+                            debug!("Reached EOF of pipe stream.");
+                        } else {
+                            debug!(
+                                "Read {n} bytes containing \"{}\\n\" from pipe stream.",
+                                trim_newline(&mut line.clone())
+                            );
+                            match client.publish_text_note(&line, &[]).await {
+                                Ok(()) => debug!(
+                                    "Publish_text_note number {:?} from pipe stream sent successfully. {:?}",
+                                    i, &line
+                                ),
+                                Err(ref e) => {
+                                    err_count += 1;
+                                    error!(
+                                        "Publish_text_note number {:?} from pipe stream failed. {:?}",
+                                        i, &line
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(ref e) => {
+                        err_count += 1;
+                        error!("Error: reading from pipe stream reported {}", e);
+                    }
+                }
+            }
+            "".to_owned()
+        } else if note == r"\-" {
+            "-".to_string()
+        } else if note == r"\_" {
+            "_".to_string()
+        } else if note == r"\-\-" {
+            "--".to_string()
+        } else if note == r"\-\-\-" {
+            "---".to_string()
+        } else {
+            note.to_string()
+        };
+        if fnote.is_empty() {
+            info!("Skipping empty text note.");
+            i += 1;
+            continue;
+        }
+
+        match client.publish_text_note(&fnote, &[]).await {
+            Ok(()) => debug!(
+                "Publish_text_note number {:?} sent successfully. {:?}",
+                i, &fnote
+            ),
+            Err(ref e) => {
+                err_count += 1;
+                error!("Publish_text_note number {:?} failed. {:?}", i, &fnote);
+            }
+        }
         i += 1;
     }
-    Ok(())
+    if err_count != 0 {
+        Err(Error::PublishFailed)
+    } else {
+        Ok(())
+    }
 }
 
 /// Handle the --publish_pow CLI argument
+/// Publish a POW text note
 pub(crate) async fn cli_publish_pow(client: &Client, ap: &mut Args) -> Result<(), Error> {
-    // Todo
-    // Publish a POW text note
-    let num = ap.publish.len();
+    let mut err_count = 0usize;
+    let num = ap.publish_pow.len();
     let mut i = 0;
     while i < num {
-        client
-            .publish_pow_text_note(&ap.publish[i], &[], ap.pow_difficulty)
-            .await?;
+        let note = &ap.publish_pow[i];
+        trace!("publish: {:?}", note);
+        if note.is_empty() {
+            info!("Skipping empty text note.");
+            i += 1;
+            continue;
+        };
+        if note == "--" {
+            info!("Skipping '--' text note as these are used to separate arguments.");
+            i += 1;
+            continue;
+        };
+        // - map to - (stdin pipe)
+        // \- maps to text r'-', a 1-letter message
+        let fnote = if note == r"-" {
+            let mut line = String::new();
+            if atty::is(Stream::Stdin) {
+                print!("Message: ");
+                std::io::stdout()
+                    .flush()
+                    .expect("error: could not flush stdout");
+                io::stdin().read_line(&mut line)?;
+            } else {
+                io::stdin().read_to_string(&mut line)?;
+            }
+            line
+        } else if note == r"_" {
+            let mut eof = false;
+            while !eof {
+                let mut line = String::new();
+                match io::stdin().read_line(&mut line) {
+                    // If this function returns Ok(0), the stream has reached EOF.
+                    Ok(n) => {
+                        if n == 0 {
+                            eof = true;
+                            debug!("Reached EOF of pipe stream.");
+                        } else {
+                            debug!(
+                                "Read {n} bytes containing \"{}\\n\" from pipe stream.",
+                                trim_newline(&mut line.clone())
+                            );
+                            debug!("Be patient, hashing ...");
+                            match client.publish_pow_text_note(&line, &[], ap.pow_difficulty).await {
+                                Ok(()) => debug!(
+                                    "Publish_pow_text_note number {:?} from pipe stream sent successfully. {:?}",
+                                    i, &line
+                                ),
+                                Err(ref e) => {
+                                    err_count += 1;
+                                    error!(
+                                        "Publish_pow_text_note number {:?} from pipe stream failed. {:?}",
+                                        i, &line
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(ref e) => {
+                        err_count += 1;
+                        error!("Error: reading from pipe stream reported {}", e);
+                    }
+                }
+            }
+            "".to_owned()
+        } else if note == r"\-" {
+            "-".to_string()
+        } else if note == r"\_" {
+            "_".to_string()
+        } else if note == r"\-\-" {
+            "--".to_string()
+        } else if note == r"\-\-\-" {
+            "---".to_string()
+        } else {
+            note.to_string()
+        };
+        if fnote.is_empty() {
+            info!("Skipping empty text note.");
+            i += 1;
+            continue;
+        }
+
+        debug!("Be patient, hashing ...");
+        match client
+            .publish_pow_text_note(&fnote, &[], ap.pow_difficulty)
+            .await
+        {
+            Ok(()) => debug!(
+                "Publish_pow_text_note number {:?} sent successfully. {:?}",
+                i, &fnote
+            ),
+            Err(ref e) => {
+                err_count += 1;
+                error!("Publish_pow_text_note number {:?} failed. {:?}", i, &fnote);
+            }
+        }
         i += 1;
     }
-    Ok(())
+    if err_count != 0 {
+        Err(Error::PublishPowFailed)
+    } else {
+        Ok(())
+    }
+}
+
+/// Publish DMs.
+pub(crate) async fn send_dms(
+    client: &Client,
+    notes: &[String],
+    recipient: &Keys,
+) -> Result<(), Error> {
+    trace!("send_dms: {:?} {:?}", notes, recipient);
+    let mut err_count = 0usize;
+    let num = notes.len();
+    let mut i = 0;
+    while i < num {
+        let note = &notes[i];
+        trace!("send_dms: {:?}", note);
+        if note.is_empty() {
+            info!("Skipping empty text note.");
+            i += 1;
+            continue;
+        };
+        if note == "--" {
+            info!("Skipping '--' text note as these are used to separate arguments.");
+            i += 1;
+            continue;
+        };
+        // - map to - (stdin pipe)
+        // \- maps to text r'-', a 1-letter message
+        let fnote = if note == r"-" {
+            let mut line = String::new();
+            if atty::is(Stream::Stdin) {
+                print!("Message: ");
+                std::io::stdout()
+                    .flush()
+                    .expect("error: could not flush stdout");
+                io::stdin().read_line(&mut line)?;
+            } else {
+                io::stdin().read_to_string(&mut line)?;
+            }
+            line
+        } else if note == r"_" {
+            let mut eof = false;
+            while !eof {
+                let mut line = String::new();
+                match io::stdin().read_line(&mut line) {
+                    // If this function returns Ok(0), the stream has reached EOF.
+                    Ok(n) => {
+                        if n == 0 {
+                            eof = true;
+                            debug!("Reached EOF of pipe stream.");
+                        } else {
+                            debug!(
+                                "Read {n} bytes containing \"{}\\n\" from pipe stream.",
+                                trim_newline(&mut line.clone())
+                            );
+                            match client.send_direct_msg(recipient, &line).await {
+                                Ok(()) => debug!(
+                                    "send_direct_msg number {:?} from pipe stream sent successfully. {:?}, sent to {:?}",
+                                    i, &line, recipient.public_key()
+                                ),
+                                Err(ref e) => {
+                                    err_count += 1;
+                                    error!(
+                                        "send_direct_msg number {:?} from pipe stream failed. {:?}, sent to {:?}",
+                                        i, &line, recipient.public_key()
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(ref e) => {
+                        err_count += 1;
+                        error!("Error: reading from pipe stream reported {}", e);
+                    }
+                }
+            }
+            "".to_owned()
+        } else if note == r"\-" {
+            "-".to_string()
+        } else if note == r"\_" {
+            "_".to_string()
+        } else if note == r"\-\-" {
+            "--".to_string()
+        } else if note == r"\-\-\-" {
+            "---".to_string()
+        } else {
+            note.to_string()
+        };
+        if fnote.is_empty() {
+            info!("Skipping empty text note.");
+            i += 1;
+            continue;
+        }
+
+        match client.send_direct_msg(recipient, &fnote).await {
+            Ok(()) => debug!(
+                "DM message number {:?} sent successfully. {:?}, sent to {:?}.",
+                i,
+                &fnote,
+                recipient.public_key()
+            ),
+            Err(ref e) => {
+                err_count += 1;
+                error!(
+                    "DM message number {:?} failed. {:?}, sent to {:?}.",
+                    i,
+                    &fnote,
+                    recipient.public_key()
+                );
+            }
+        }
+        i += 1;
+    }
+    if err_count != 0 {
+        Err(Error::PublishPowFailed)
+    } else {
+        Ok(())
+    }
 }
 
 /// Handle the --dm CLI argument
-/// Publish DM
+/// Publish DMs.
 pub(crate) async fn cli_dm(client: &Client, ap: &mut Args) -> Result<(), Error> {
-    let mut err_count = 0usize;
     let num = ap.dm.len();
     if num < 2 {
         return Err(Error::MissingCliParameter);
@@ -1403,20 +1762,8 @@ pub(crate) async fn cli_dm(client: &Client, ap: &mut Args) -> Result<(), Error> 
     match cstr_to_pubkey(ap, ap.dm[0].trim()) {
         Ok(pk) => {
             let keys = Keys::from_public_key(pk);
-            let mut i = 1;
-            while i < num {
-                match client.send_direct_msg(&keys, &ap.dm[i]).await {
-                    Ok(()) => debug!(
-                        "DM message number {:?} sent successfully. {:?}",
-                        i, &ap.dm[i]
-                    ),
-                    Err(ref e) => {
-                        err_count += 1;
-                        error!("DM message number {:?} failed. {:?}", i, &ap.dm[i]);
-                    }
-                }
-                i += 1;
-            }
+            let notes = &ap.dm[1..];
+            send_dms(client, notes, &keys).await
         }
         Err(ref e) => {
             error!(
@@ -1424,13 +1771,8 @@ pub(crate) async fn cli_dm(client: &Client, ap: &mut Args) -> Result<(), Error> 
                 ap.dm[0].trim(),
                 ap.dm[1]
             );
-            return Err(Error::InvalidKey);
+            Err(Error::InvalidKey)
         }
-    }
-    if err_count != 0 {
-        Err(Error::DmFailed)
-    } else {
-        Ok(())
     }
 }
 
@@ -2017,7 +2359,7 @@ async fn main() -> Result<(), Error> {
             }
         }
     }
-    if !ap.creds.subscribed_authors.is_empty() {
+    if !ap.creds.subscribed_authors.is_empty() && ap.listen {
         let mut asf: SubscriptionFilter;
         asf = SubscriptionFilter::new().authors(ap.creds.subscribed_authors.clone());
         if ap.limit_number != 0 {
@@ -2056,7 +2398,7 @@ async fn main() -> Result<(), Error> {
             }
         }
     }
-    if !ap.creds.subscribed_pubkeys.is_empty() {
+    if !ap.creds.subscribed_pubkeys.is_empty() && ap.listen {
         let mut ksf: SubscriptionFilter;
         ksf = SubscriptionFilter::new().pubkeys(ap.creds.subscribed_pubkeys.clone());
         if ap.limit_number != 0 {
@@ -2092,7 +2434,7 @@ async fn main() -> Result<(), Error> {
     // || !ap.creds.subscribed_authors.is_empty()
     // || !ap.creds.subscribed_pubkeys.is_empty()
     {
-        let num = ap.publish.len() + ap.publish_pow.len();
+        let num = ap.publish.len() + ap.publish_pow.len() + ap.dm.len();
         if num == 1 {
             info!(
                 "You should be receiving {:?} 'OK' message with event id for the notice once it has been relayed.",

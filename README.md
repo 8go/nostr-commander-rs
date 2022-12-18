@@ -42,6 +42,7 @@ nostr-command(lin)er. A word play.
 - https://github.com/8go/nostr-commander-rs
 - https://crates.io/crates/nostr-commander
 - https://docs.rs/crate/nostr-commander
+- https://github.com/yukibtc/nostr-rs-sdk: `nostr-sdk` used to build `nostr-commander`
 
 # Installation
 
@@ -146,6 +147,16 @@ Options:
           a "check crates.io" upon request. Your privacy is protected. New
           release is neither downloaded, nor installed. It just informs you [possible
           values: check]
+      --usage
+          Prints very short help summary. Details:: See also --help, --manual
+          and --readme
+  -h, --help
+          Prints short help. Details:: See also --usage, --manual and --readme
+      --manual
+          Prints long help. Details:: See also --usage, --help and --readme
+      --readme
+          Prints README.md file, the documenation in Markdown. Details:: See
+          also --usage, --help and --manual
   -d, --debug...
           Overwrite the default log level. If not used, then the default log
           level set with environment variable 'RUST_LOG' will be used. If used,
@@ -252,9 +263,17 @@ Options:
           its public key, a string in the form of 'npub1...', a Hex key, or an
           alias from one of your contacts. The first argument is the recipient,
           all further arguments are texts to be sent. E.g. '-dm
-          'npub1SomeStrangeNumbers "First msg" "Second msg"' or 'dm joe "How
+          "npub1SomeStrangeNumbers" "First msg" "Second msg"' or '--dm joe "How
           about pizza tonight?"'. See also '--publish' to see how shortcut
           characters '-' (pipe) and '_' (streamed pipe) are handled
+      --send-channel-message [<HASH+MSGS>...]
+          Send one or multiple messages to one given channel. The single
+          destination channel is specified via its hash. See here for a channel
+          list: https://damus.io/channels/. The first argument is the channel
+          hash, all further arguments are texts to be sent. E.g.
+          '-send_channel_message "SomeChannelHash" "First msg" "Second msg"'.
+          See also '--publish' to see how shortcut characters '-' (pipe) and
+          '_' (streamed pipe) are handled
       --add-relay [<RELAY_URI>...]
           Add one or multiple relays. A relay is specified via a URI that looks
           like 'wss://some.relay.org'. You can find relays by looking at
@@ -331,14 +350,41 @@ Options:
       --relay [<RELAY>...]
           Provide one or multiple relays for argument --add-contact. They have
           the form 'wss://some.relay.org'
-      --subscribe-author [<KEY>...]
-          Subscribe to one or more authors. Specify each author by its public
-          key in form of 'npub1SomePublicKey'. Alternatively you can use the
-          Hex form of the private key
+      --npub-to-hex [<KEY>...]
+          Convert one or multiple public keys in Bech32 format ('npub1...')
+          into the corresponding 'hex' format. Details:: See also --hex-to-npub
+      --hex-to-npub [<KEY>...]
+          Convert one or multiple public keys in 'hex' format into the
+          corresponding Bech32 ('npub1...') format. Details:: See also
+          --npub-to-hex
+      --get-pubkey-entity [<KEY>...]
+          Get the entity of one or multiple public keys. Details:: This will
+          show you for every public key given if the key represents a Nostr
+          account (usually an individual) or a public Nostr channel. It might
+          also return "Unknown" if the entity of the key cannot be determined.
+          E.g. this can be helpful to determine if you want to use
+          --subscribe-author or --subscribe-channel
       --subscribe-pubkey [<KEY>...]
-          Subscribe to one or more public keys. Specify each public key in form
-          of 'npub1SomePublicKey'. Alternatively you can use the Hex form of
-          the private key
+          Subscribe to one or more public keys. Details: Specify each public
+          key in form of 'npub1SomePublicKey'. Alternatively you can use the
+          Hex form of the public key. Use this option to subscribe to an
+          account, i.e. the key of an individual. See also --subscribe-channel
+          which are different
+      --subscribe-author [<KEY>...]
+          Subscribe to authors with to one or more public keys of accounts.
+          Details:: Specify each public key in form of 'npub1SomePublicKey'.
+          Alternatively you can use the Hex form of the public key. Use this
+          option to subscribe to a Nostr accounts (usually individuals).
+          Provide keys that represent accounts (see --get-pubkey-entity). See
+          also --subscribe-pubkey and --subscribe-channel which are different
+      --subscribe-channel [<KEY>...]
+          Subscribe to public channels with one or more public keys of
+          channels. Details:: Specify each public key in form of
+          'npub1SomePublicKey'. Alternatively you can use the Hex form of the
+          public key. Sometimes the public key of a public channel is referred
+          to as channel id. Provide keys that represent public channels (see
+          --get-pubkey-entity). See also --subscribe-pubkey and
+          --subscribe-author which are different
       --limit-number <NUMBER>
           Limit the number of messages to receive when subscribing. By default
           there is no limit (0) [default: 0]
@@ -356,8 +402,7 @@ Options:
           Limit the messages received to the last N hours when subscribing.
           Stop receiving N hours in the future. By default there is no limit
           (0) [default: 0]
-  -h, --help
-          Print help information (use `--help` for more detail)
+
 ```
 
 # Other Related Projects

@@ -2,7 +2,7 @@
 
 [package]
 name = "nostr-commander"
-version = "0.0.9"
+version = "0.0.10"
 edition = "2021"
 description = "simple but convenient CLI-based Nostr client app for publishing,sending and subscribing"
 documentation = "https://docs.rs/nostr-commander"
@@ -19,7 +19,7 @@ publish = true
 
 [dependencies]
 anyhow = "1"
-nostr-sdk = "0.5"
+nostr-sdk = "0.7"
 tokio = { version = "1.23", features = ["full"] }
 clap = { version = "4.0", features = ["derive", "color", "wrap_help", "unicode"] }
 thiserror = "1.0"
@@ -33,6 +33,8 @@ update-informer = "0.5"
 chrono = "0.4"
 json = "0.12"
 atty = "0.2"
+bitcoin_hashes = "0.11"
+reqwest = "0.11"
 
 
 [dev-dependencies]

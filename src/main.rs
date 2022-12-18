@@ -19,7 +19,8 @@
 #![allow(unused_imports)] // Todo
 
 use atty::Stream;
-use clap::{ColorChoice, Parser, ValueEnum};
+use clap::{ColorChoice, CommandFactory, Parser, ValueEnum};
+
 use directories::ProjectDirs;
 // use mime::Mime;
 use chrono::{Duration, Utc};
@@ -31,6 +32,7 @@ use std::fmt::{self, Debug};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::net::SocketAddr;
+use std::panic;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use thiserror::Error;
@@ -38,6 +40,8 @@ use tracing::{debug, enabled, error, info, trace, warn, Level};
 use tracing_subscriber;
 use update_informer::{registry, Check};
 use url::Url;
+
+use bitcoin_hashes::sha256::Hash;
 
 use nostr_sdk::{
     nostr::contact::Contact,
@@ -48,6 +52,7 @@ use nostr_sdk::{
     nostr::key::{FromBech32, KeyError, Keys, ToBech32},
     nostr::message::relay::RelayMessage,
     nostr::message::subscription::SubscriptionFilter,
+    nostr::util::time,
     // nostr::util::nips::nip04::Error as Nip04Error,
     nostr::Metadata,
     relay::pool::RelayPoolNotifications,
@@ -84,6 +89,8 @@ const CREDENTIALS_FILE_DEFAULT: &str = "credentials.json";
 // const TIMEOUT_DEFAULT: u64 = 60;
 /// default POW difficulty
 const POW_DIFFICULTY_DEFAULT: u8 = 20;
+/// URL for README.md file downloaded for --readme
+const URL_README: &str = "https://raw.githubusercontent.com/8go/nostr-commander-rs/main/README.md";
 
 /// The enumerator for Errors
 #[derive(Error, Debug)]
@@ -118,6 +125,9 @@ pub enum Error {
     #[error("Add Relay Failed")]
     AddRelayFailed,
 
+    #[error("Conversion Failed")]
+    ConversionFailed,
+
     #[error("Publish Failed")]
     PublishFailed,
 
@@ -130,17 +140,26 @@ pub enum Error {
     #[error("Send Failed")]
     SendFailed,
 
+    #[error("Send Channel Failed")]
+    SendChannelFailed,
+
     #[error("Listen Failed")]
     ListenFailed,
 
     #[error("Subscription Failed")]
     SubscriptionFailed,
 
+    #[error("Get Entity Failed")]
+    GetEntityFailed,
+
     #[error("Invalid Client Connection")]
     InvalidClientConnection,
 
     #[error("Invalid Key")]
     InvalidKey,
+
+    #[error("Invalid Hash")]
+    InvalidHash,
 
     #[error("Unknown CLI parameter")]
     UnknownCliParameter,
@@ -324,12 +343,14 @@ impl fmt::Display for Output {
 /// and see if you can contribute code to improve this tool.
 /// Safe!
 #[derive(Clone, Debug, Parser)]
-#[command(author, version, next_line_help = true,
+#[command(author, version,
+    next_line_help = true,
     bin_name = get_prog_without_ext(),
     color = ColorChoice::Always,
     term_width = 79,
     after_help = "",
     disable_version_flag = true,
+    disable_help_flag = true,
 )]
 pub struct Args {
     // This is an internal field used to store credentials.
@@ -352,6 +373,26 @@ pub struct Args {
     /// nor installed. It just informs you.
     #[arg(short, long, value_name = "CHECK")]
     version: Option<Option<Version>>,
+
+    /// Prints very short help summary.
+    /// Details:: See also --help, --manual and --readme.
+    #[arg(long)]
+    usage: bool,
+
+    /// Prints short help.
+    /// Details:: See also --usage, --manual and --readme.
+    #[arg(short, long)]
+    help: bool,
+
+    /// Prints long help.
+    /// Details:: See also --usage, --help and --readme.
+    #[arg(long)]
+    manual: bool,
+
+    /// Prints README.md file, the documenation in Markdown.
+    /// Details:: See also --usage, --help and --manual.
+    #[arg(long)]
+    readme: bool,
 
     /// Overwrite the default log level. If not used, then the default
     /// log level set with environment variable 'RUST_LOG' will be used.
@@ -517,12 +558,25 @@ pub struct Args {
     /// string in the form of 'npub1...', a Hex key, or an alias from
     /// one of your contacts. The first argument
     /// is the recipient, all further arguments are texts to be
-    /// sent. E.g. '-dm 'npub1SomeStrangeNumbers "First msg" "Second msg"'
-    /// or 'dm joe "How about pizza tonight?"'.
+    /// sent. E.g. '-dm "npub1SomeStrangeNumbers" "First msg" "Second msg"'
+    /// or '--dm joe "How about pizza tonight?"'.
     /// See also '--publish' to see how shortcut characters
     /// '-' (pipe) and '_' (streamed pipe) are handled.
     #[arg(long, alias = "direct", value_name = "KEY+MSGS", num_args(0..), )]
     dm: Vec<String>,
+
+    /// Send one or multiple messages to one given channel.
+    /// The single destination channel is specified via its hash.
+    /// See here for a channel list: https://damus.io/channels/.
+    /// The first argument
+    /// is the channel hash, all further arguments are texts to be
+    /// sent. E.g.
+    /// '-send_channel_message "SomeChannelHash" "First msg" "Second msg"'.
+    // or '--send_channel_message joe "How about pizza tonight?"'.
+    /// See also '--publish' to see how shortcut characters
+    /// '-' (pipe) and '_' (streamed pipe) are handled.
+    #[arg(long, alias = "chan", value_name = "HASH+MSGS", num_args(0..), )]
+    send_channel_message: Vec<String>,
 
     /// Add one or multiple relays. A relay is specified via a URI
     /// that looks like 'wss://some.relay.org'. You can find relays
@@ -647,21 +701,63 @@ pub struct Args {
     #[arg(long, value_name = "RELAY", num_args(0..), )]
     relay: Vec<Url>,
 
-    /// Subscribe to one or more authors. Specify each author by its
+    /// Convert one or multiple public keys in Bech32 format ('npub1...') into
+    /// the corresponding 'hex' format.
+    /// Details:: See also --hex-to-npub.
+    #[arg(long, value_name = "KEY", num_args(0..), )]
+    npub_to_hex: Vec<String>,
+
+    /// Convert one or multiple public keys in 'hex' format into
+    /// the corresponding Bech32 ('npub1...') format.
+    /// Details:: See also --npub-to-hex.
+    #[arg(long, value_name = "KEY", num_args(0..), )]
+    hex_to_npub: Vec<String>,
+
+    /// Get the entity of one or multiple public keys.
+    /// Details:: This will show you
+    /// for every public key given if the key represents a Nostr account
+    /// (usually an individual) or a public Nostr channel. It might also
+    /// return "Unknown" if the entity of the key cannot be determined.
+    /// E.g. this can be helpful to determine if you want to use
+    /// --subscribe-author or --subscribe-channel.
+    #[arg(long, value_name = "KEY", num_args(0..), )]
+    get_pubkey_entity: Vec<String>,
+
+    /// Subscribe to one or more public keys.
+    /// Details: Specify each
     /// public key in form of 'npub1SomePublicKey'.
-    /// Alternatively you can use the Hex form of the private key.
+    /// Alternatively you can use the Hex form of the public key.
+    /// Use this option to subscribe to an account, i.e. the key of
+    /// an individual.
+    /// See also --subscribe-channel which are different.
+    #[arg(long, value_name = "KEY", num_args(0..), )]
+    subscribe_pubkey: Vec<String>,
+
+    /// Subscribe to authors with to one or more public keys of accounts.
+    /// Details:: Specify each
+    /// public key in form of 'npub1SomePublicKey'.
+    /// Alternatively you can use the Hex form of the public key.
+    /// Use this option to subscribe to a Nostr accounts (usually individuals).
+    /// Provide keys that represent accounts (see --get-pubkey-entity).
+    /// See also --subscribe-pubkey and --subscribe-channel which are different.
     #[arg(long, value_name = "KEY", num_args(0..), )]
     subscribe_author: Vec<String>,
 
-    /// Subscribe to one or more public keys. Specify each
+    /// Subscribe to public channels with one or more public keys of channels.
+    /// Details:: Specify each
     /// public key in form of 'npub1SomePublicKey'.
-    /// Alternatively you can use the Hex form of the private key.
+    /// Alternatively you can use the Hex form of the public key.
+    /// Sometimes the public key of a public channel is referred to as
+    /// channel id.
+    /// Provide keys that represent public channels (see --get-pubkey-entity).
+    /// See also --subscribe-pubkey and --subscribe-author which are different.
     #[arg(long, value_name = "KEY", num_args(0..), )]
-    subscribe_pubkey: Vec<String>,
+    subscribe_channel: Vec<String>,
+
     // todo: unsubscribe_pubkey
     // todo unsubscribe_author
-    // todo mpub1-to-hex
-    // todo hex-to-npub1
+    // todo: unsubscribe_channel
+
     //
     /// Limit the number of messages to receive when subscribing.
     /// By default there is no limit (0).
@@ -701,6 +797,10 @@ impl Args {
     pub fn new() -> Args {
         Args {
             creds: Credentials::new(),
+            usage: false,
+            help: false,
+            manual: false,
+            readme: false,
             contribute: false,
             version: None,
             debug: 0u8,
@@ -719,6 +819,7 @@ impl Args {
             publish: Vec::new(),
             publish_pow: Vec::new(),
             dm: Vec::new(),
+            send_channel_message: Vec::new(),
             add_relay: Vec::new(),
             // tag: Vec::new(),
             show_metadata: false,
@@ -736,8 +837,12 @@ impl Args {
             alias: Vec::new(),
             key: Vec::new(),
             relay: Vec::new(),
-            subscribe_author: Vec::new(),
+            npub_to_hex: Vec::new(),
+            hex_to_npub: Vec::new(),
+            get_pubkey_entity: Vec::new(),
             subscribe_pubkey: Vec::new(),
+            subscribe_author: Vec::new(),
+            subscribe_channel: Vec::new(),
             limit_number: 0,
             limit_days: 0,
             limit_hours: 0,
@@ -757,8 +862,9 @@ pub struct Credentials {
     relays: Vec<Url>,
     metadata: Metadata,
     contacts: Vec<Contact>,
-    subscribed_authors: Vec<XOnlyPublicKey>,
     subscribed_pubkeys: Vec<XOnlyPublicKey>,
+    subscribed_authors: Vec<XOnlyPublicKey>,
+    subscribed_channels: Vec<XOnlyPublicKey>,
 }
 
 impl AsRef<Credentials> for Credentials {
@@ -783,8 +889,9 @@ impl Credentials {
             relays: Vec::new(),
             metadata: Metadata::new(),
             contacts: Vec::new(),
-            subscribed_authors: Vec::new(),
             subscribed_pubkeys: Vec::new(),
+            subscribed_authors: Vec::new(),
+            subscribed_channels: Vec::new(),
         }
     }
 
@@ -904,6 +1011,40 @@ fn get_pkg_repository() -> &'static str {
 fn get_prog_without_ext() -> &'static str {
     get_bin_name() // with -rs suffix
                    // get_pkg_name() // without -rs suffix
+}
+
+/// Prints the usage info
+pub fn usage() {
+    let help_str = Args::command().render_usage().to_string();
+    println!("{}", &help_str);
+}
+
+/// Prints the short help
+pub fn help() {
+    let help_str = Args::command().render_help().to_string();
+    println!("{}", &help_str);
+}
+
+/// Prints the long help
+pub fn manual() {
+    let help_str = Args::command().render_long_help().to_string();
+    println!("{}", &help_str);
+}
+
+/// Prints the README.md file
+pub async fn readme() {
+    match reqwest::get(URL_README).await {
+        Ok(resp) => {
+            debug!("Got README.md file from URL {:?}.", URL_README);
+            println!("{}", resp.text().await.unwrap())
+        }
+        Err(ref e) => {
+            println!(
+                "Error getting README.md from {:#?}. Reported error {:?}.",
+                URL_README, e
+            );
+        }
+    };
 }
 
 /// Prints the version information
@@ -1776,6 +1917,149 @@ pub(crate) async fn cli_dm(client: &Client, ap: &mut Args) -> Result<(), Error> 
     }
 }
 
+/// Send messages to one channel.
+pub(crate) async fn send_channel_messages(
+    client: &Client,
+    notes: &[String], // msgs
+    channel_id: Hash,
+    relay_url: Url,
+) -> Result<(), Error> {
+    trace!("send_channel_messages {:?} {:?}.", notes, channel_id);
+    let mut err_count = 0usize;
+    let num = notes.len();
+    let mut i = 0;
+    while i < num {
+        let note = &notes[i];
+        trace!("send_dms: {:?}", note);
+        if note.is_empty() {
+            info!("Skipping empty text note.");
+            i += 1;
+            continue;
+        };
+        if note == "--" {
+            info!("Skipping '--' text note as these are used to separate arguments.");
+            i += 1;
+            continue;
+        };
+        // - map to - (stdin pipe)
+        // \- maps to text r'-', a 1-letter message
+        let fnote = if note == r"-" {
+            let mut line = String::new();
+            if atty::is(Stream::Stdin) {
+                print!("Message: ");
+                std::io::stdout()
+                    .flush()
+                    .expect("error: could not flush stdout");
+                io::stdin().read_line(&mut line)?;
+            } else {
+                io::stdin().read_to_string(&mut line)?;
+            }
+            line
+        } else if note == r"_" {
+            let mut eof = false;
+            while !eof {
+                let mut line = String::new();
+                match io::stdin().read_line(&mut line) {
+                    // If this function returns Ok(0), the stream has reached EOF.
+                    Ok(n) => {
+                        if n == 0 {
+                            eof = true;
+                            debug!("Reached EOF of pipe stream.");
+                        } else {
+                            debug!(
+                                "Read {n} bytes containing \"{}\\n\" from pipe stream.",
+                                trim_newline(&mut line.clone())
+                            );
+                            match client.send_channel_msg(channel_id, relay_url.clone(), &line).await {
+                                Ok(()) => debug!(
+                                    "send_channel_msg number {:?} from pipe stream sent successfully. {:?}, sent to {:?}",
+                                    i, &line, channel_id
+                                ),
+                                Err(ref e) => {
+                                    err_count += 1;
+                                    error!(
+                                        "send_channel_msg number {:?} from pipe stream failed. {:?}, sent to {:?}",
+                                        i, &line, channel_id
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(ref e) => {
+                        err_count += 1;
+                        error!("Error: reading from pipe stream reported {}", e);
+                    }
+                }
+            }
+            "".to_owned()
+        } else if note == r"\-" {
+            "-".to_string()
+        } else if note == r"\_" {
+            "_".to_string()
+        } else if note == r"\-\-" {
+            "--".to_string()
+        } else if note == r"\-\-\-" {
+            "---".to_string()
+        } else {
+            note.to_string()
+        };
+        if fnote.is_empty() {
+            info!("Skipping empty text note.");
+            i += 1;
+            continue;
+        }
+
+        match client
+            .send_channel_msg(channel_id, relay_url.clone(), &fnote)
+            .await
+        {
+            Ok(()) => debug!(
+                "send_channel_msg message number {:?} sent successfully. {:?}, sent to {:?}.",
+                i, &fnote, channel_id
+            ),
+            Err(ref e) => {
+                err_count += 1;
+                error!(
+                    "send_channel_msg message number {:?} failed. {:?}, sent to {:?}.",
+                    i, &fnote, channel_id
+                );
+            }
+        }
+        i += 1;
+    }
+    if err_count != 0 {
+        Err(Error::SendChannelFailed)
+    } else {
+        Ok(())
+    }
+}
+
+/// Handle the --send-channel-message CLI argument
+/// Publish messages to one channel.
+pub(crate) async fn cli_send_channel_message(client: &Client, ap: &mut Args) -> Result<(), Error> {
+    let num = ap.send_channel_message.len();
+    if num < 2 {
+        return Err(Error::MissingCliParameter);
+    }
+    // todo: check if hash is valid, doable?
+    match Hash::from_str(&ap.send_channel_message[0]) {
+        Ok(hash) => {
+            let notes = &ap.send_channel_message[1..];
+            // todo: any relay is fine?
+            let relay_url: Url = ap.creds.relays[0].clone();
+            send_channel_messages(client, notes, hash, relay_url).await
+        }
+        Err(ref e) => {
+            error!(
+                "Error: Not a valid hash (channel id). Cannot send this channel message. Aborting. Hash {:?}, 1st Msg {:?} ",
+                ap.send_channel_message[0],
+                ap.send_channel_message[1]
+            );
+            Err(Error::InvalidHash)
+        }
+    }
+}
+
 /// Is key in subscribed_authors list?
 pub(crate) fn is_subscribed_author(ap: &Args, pkey: &XOnlyPublicKey) -> bool {
     ap.creds.subscribed_authors.contains(pkey)
@@ -1913,40 +2197,6 @@ pub(crate) async fn cli_remove_contact(client: &Client, ap: &mut Args) -> Result
     Ok(())
 }
 
-/// Handle the --subscribe-author CLI argument, moving authors from CLI args into creds data structure
-pub(crate) async fn cli_subscribe_author(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
-    let mut err_count = 0usize;
-    let num = ap.subscribe_author.len();
-    let mut authors = Vec::new();
-    let mut i = 0;
-    while i < num {
-        match str_to_pubkey(&ap.subscribe_author[i]) {
-            Ok(pkey) => {
-                authors.push(pkey);
-                debug!(
-                    "Valid key added to subscription filter. Key {:?}, {:?}.",
-                    &ap.subscribe_author[i], pkey
-                );
-            }
-            Err(ref e) => {
-                error!(
-                    "Error: Invalid key {:?}. Not added to subscription filter.",
-                    &ap.subscribe_author[i]
-                );
-                err_count += 1;
-            }
-        }
-        i += 1;
-    }
-    ap.creds.subscribed_authors.append(&mut authors);
-    ap.creds.subscribed_authors.dedup_by(|a, b| a == b);
-    if err_count != 0 {
-        Err(Error::SubscriptionFailed)
-    } else {
-        Ok(())
-    }
-}
-
 /// Convert npub1... Bech32 key or Hex key or contact alias into a XOnlyPublicKey
 /// Returns Error if neither valid Bech32, nor Hex key, nor contact alias.
 pub(crate) fn cstr_to_pubkey(ap: &Args, s: &str) -> Result<XOnlyPublicKey, Error> {
@@ -1985,6 +2235,206 @@ pub(crate) fn str_to_pubkey(s: &str) -> Result<XOnlyPublicKey, Error> {
     }
 }
 
+/// Convert npub1... Bech32 key or Hex key into a npub+hex pair as Vector.
+/// s ... input, npub ... output, hex ... output.
+/// Returns Error if neither valid Bech32 nor Hex key.
+pub(crate) fn str_to_pubkeys(s: &str) -> Result<(String, String), Error> {
+    match Keys::from_bech32_public_key(s) {
+        Ok(keys) => {
+            debug!(
+                "Valid key in Bech32 format: Npub {:?}, Hex {:?}",
+                s,
+                keys.public_key().to_string()
+            );
+            let npub = s.to_owned();
+            let hex = keys.public_key().to_string();
+            return Ok((npub, hex));
+        }
+        Err(ref e) => match XOnlyPublicKey::from_str(s) {
+            Ok(pkey) => {
+                debug!(
+                    "Valid key in Hex format: Hex {:?}, Npub {:?}",
+                    s,
+                    pkey.to_bech32().unwrap()
+                );
+                let npub = pkey.to_bech32().unwrap();
+                let hex = s.to_owned();
+                return Ok((npub, hex));
+            }
+            Err(ref e) => {
+                error!("Error: Invalid key {:?}. Reported error: {:?}.", s, e);
+                return Err(Error::InvalidKey);
+            }
+        },
+    }
+}
+
+/// Handle the --cli_npub_to_hex CLI argument
+pub(crate) fn cli_npub_to_hex(ap: &Args) -> Result<(), Error> {
+    let mut err_count = 0usize;
+    let num = ap.npub_to_hex.len();
+    let mut i = 0;
+    while i < num {
+        match str_to_pubkeys(&ap.npub_to_hex[i]) {
+            Ok((npub, hex)) => {
+                debug!("Valid key. Npub {:?}, Hex: {:?}.", &npub, &hex);
+                print_json(
+                    &json!({
+                        "npub": npub,
+                        "hex": hex,
+                    }),
+                    ap.output,
+                    0,
+                    "",
+                );
+            }
+            Err(ref e) => {
+                error!(
+                    "Error: Invalid key {:?}. Not added to subscription filter.",
+                    &ap.npub_to_hex[i]
+                );
+                print_json(
+                    &json!({
+                        "npub": ap.npub_to_hex[i],
+                        "error": "invalid key",
+                    }),
+                    ap.output,
+                    0,
+                    "",
+                );
+                err_count += 1;
+            }
+        }
+        i += 1;
+    }
+    if err_count != 0 {
+        Err(Error::ConversionFailed)
+    } else {
+        Ok(())
+    }
+}
+
+/// Handle the --cli_hex_to_npub CLI argument
+pub(crate) fn cli_hex_to_npub(ap: &Args) -> Result<(), Error> {
+    let mut err_count = 0usize;
+    let num = ap.hex_to_npub.len();
+    let mut i = 0;
+    while i < num {
+        match str_to_pubkeys(&ap.hex_to_npub[i]) {
+            Ok((npub, hex)) => {
+                debug!("Valid key. Npub {:?}, Hex: {:?}.", &npub, &hex);
+                print_json(
+                    &json!({
+                        "npub": npub,
+                        "hex": hex,
+                    }),
+                    ap.output,
+                    0,
+                    "",
+                );
+            }
+            Err(ref e) => {
+                error!(
+                    "Error: Invalid key {:?}. Not added to subscription filter.",
+                    &ap.hex_to_npub[i]
+                );
+                print_json(
+                    &json!({
+                        "hex": ap.hex_to_npub[i],
+                        "error": "invalid key",
+                    }),
+                    ap.output,
+                    0,
+                    "",
+                );
+                err_count += 1;
+            }
+        }
+        i += 1;
+    }
+    if err_count != 0 {
+        Err(Error::ConversionFailed)
+    } else {
+        Ok(())
+    }
+}
+
+/// Handle the --cli_get_pubkey_entity CLI argument
+pub(crate) async fn cli_get_pubkey_entity(client: &Client, ap: &mut Args) -> Result<(), Error> {
+    let mut err_count = 0usize;
+    let num = ap.get_pubkey_entity.len();
+    let mut i = 0;
+    while i < num {
+        match str_to_pubkey(&ap.get_pubkey_entity[i]) {
+            Ok(pkey) => {
+                debug!(
+                    "Valid key. Key {:?}, Hex: {:?}.",
+                    &ap.subscribe_pubkey[i],
+                    pkey.to_string()
+                );
+                match client.get_entity_of_pubkey(pkey).await {
+                    Ok(entity) => {
+                        debug!(
+                            "Valid key. Key {:?}, Hex: {:?}, Entity: {:?}",
+                            &ap.subscribe_pubkey[i],
+                            pkey.to_string(),
+                            entity
+                        );
+                        print_json(
+                            &json!({
+                                "hex": pkey.to_string(),
+                                "entity": format!("{:?}",entity),
+                            }),
+                            ap.output,
+                            0,
+                            "",
+                        );
+                    }
+                    Err(ref e) => {
+                        debug!(
+                            "Valid key. Key {:?}, Hex: {:?}, Entity error: {:?}",
+                            &ap.subscribe_pubkey[i],
+                            pkey.to_string(),
+                            e
+                        );
+                        print_json(
+                            &json!({
+                                "hex": pkey.to_string(),
+                                "error": format!("{:?}",e),
+                            }),
+                            ap.output,
+                            0,
+                            "",
+                        );
+                    }
+                }
+            }
+            Err(ref e) => {
+                error!(
+                    "Error: Invalid key {:?}. No attempt made to determine entity.",
+                    &ap.get_pubkey_entity[i]
+                );
+                print_json(
+                    &json!({
+                        "key": ap.get_pubkey_entity[i],
+                        "error": "invalid key",
+                    }),
+                    ap.output,
+                    0,
+                    "",
+                );
+                err_count += 1;
+            }
+        }
+        i += 1;
+    }
+    if err_count != 0 {
+        Err(Error::GetEntityFailed)
+    } else {
+        Ok(())
+    }
+}
+
 /// Handle the --subscribe-pubkey CLI argument, moving pkeys from CLI args into creds data structure
 pub(crate) async fn cli_subscribe_pubkey(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
     let mut err_count = 0usize;
@@ -2013,6 +2463,75 @@ pub(crate) async fn cli_subscribe_pubkey(client: &mut Client, ap: &mut Args) -> 
     }
     ap.creds.subscribed_pubkeys.append(&mut pubkeys);
     ap.creds.subscribed_pubkeys.dedup_by(|a, b| a == b);
+    if err_count != 0 {
+        Err(Error::SubscriptionFailed)
+    } else {
+        Ok(())
+    }
+}
+
+/// Handle the --subscribe-author CLI argument, moving authors from CLI args into creds data structure
+pub(crate) async fn cli_subscribe_author(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
+    let mut err_count = 0usize;
+    let num = ap.subscribe_author.len();
+    let mut authors = Vec::new();
+    let mut i = 0;
+    while i < num {
+        match str_to_pubkey(&ap.subscribe_author[i]) {
+            Ok(pkey) => {
+                authors.push(pkey);
+                debug!(
+                    "Valid key added to subscription filter. Key {:?}, {:?}.",
+                    &ap.subscribe_author[i], pkey
+                );
+            }
+            Err(ref e) => {
+                error!(
+                    "Error: Invalid key {:?}. Not added to subscription filter.",
+                    &ap.subscribe_author[i]
+                );
+                err_count += 1;
+            }
+        }
+        i += 1;
+    }
+    ap.creds.subscribed_authors.append(&mut authors);
+    ap.creds.subscribed_authors.dedup_by(|a, b| a == b);
+    if err_count != 0 {
+        Err(Error::SubscriptionFailed)
+    } else {
+        Ok(())
+    }
+}
+
+/// Handle the --subscribe-channel CLI argument, moving pkeys from CLI args into creds data structure
+pub(crate) async fn cli_subscribe_channel(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
+    let mut err_count = 0usize;
+    let num = ap.subscribe_channel.len();
+    let mut pubkeys = Vec::new();
+    let mut i = 0;
+    while i < num {
+        match str_to_pubkey(&ap.subscribe_channel[i]) {
+            Ok(pkey) => {
+                pubkeys.push(pkey);
+                debug!(
+                    "Valid key added to subscription filter. Key {:?}, Hex: {:?}.",
+                    &ap.subscribe_channel[i],
+                    pkey.to_string()
+                );
+            }
+            Err(ref e) => {
+                error!(
+                    "Error: Invalid key {:?}. Not added to subscription filter.",
+                    &ap.subscribe_channel[i]
+                );
+                err_count += 1;
+            }
+        }
+        i += 1;
+    }
+    ap.creds.subscribed_channels.append(&mut pubkeys);
+    ap.creds.subscribed_channels.dedup_by(|a, b| a == b);
     if err_count != 0 {
         Err(Error::SubscriptionFailed)
     } else {
@@ -2069,6 +2588,7 @@ pub(crate) fn print_json(jsonv: &Value, output: Output, depth: u32, separator: &
         }
         Output::JsonSpec => (),
         _ => {
+            // This can panic if output is piped and pipe is broken by receiving process
             println!("{}", jsonv.to_string(),);
         }
     }
@@ -2139,6 +2659,22 @@ async fn main() -> Result<(), Error> {
         Some(None) => crate::version(), // print version
         Some(Some(Version::Check)) => crate::version_check(),
     }
+    if ap.usage {
+        crate::usage();
+        return Ok(());
+    };
+    if ap.help {
+        crate::help();
+        return Ok(());
+    };
+    if ap.manual {
+        crate::manual();
+        return Ok(());
+    };
+    if ap.readme {
+        crate::readme().await;
+        return Ok(());
+    };
     if ap.contribute {
         crate::contribute();
     };
@@ -2196,6 +2732,34 @@ async fn main() -> Result<(), Error> {
     if ap.whoami {
         cli_whoami(&ap)?;
     }
+    // npub_to_hex
+    if !ap.npub_to_hex.is_empty() {
+        match cli_npub_to_hex(&ap) {
+            Ok(()) => {
+                info!("Converting keys from npub to hex successful.");
+            }
+            Err(ref e) => {
+                error!(
+                    "Converting keys from npub to hex failed. Reported error is: {:?}",
+                    e
+                );
+            }
+        }
+    }
+    // hex_to_npub
+    if !ap.hex_to_npub.is_empty() {
+        match cli_hex_to_npub(&ap) {
+            Ok(()) => {
+                info!("Converting keys from hex to npub successful.");
+            }
+            Err(ref e) => {
+                error!(
+                    "Converting keys from hex to npub failed. Reported error is: {:?}",
+                    e
+                );
+            }
+        }
+    }
     // Create new client
     let mut client = Client::new(&my_keys);
 
@@ -2227,26 +2791,42 @@ async fn main() -> Result<(), Error> {
         || !ap.publish_pow.is_empty()
         || !ap.publish.is_empty()
         || !ap.dm.is_empty()
-        || !ap.subscribe_author.is_empty()
+        || !ap.send_channel_message.is_empty()
         || !ap.subscribe_pubkey.is_empty()
+        || !ap.subscribe_author.is_empty()
+        || !ap.subscribe_channel.is_empty()
+        || !ap.get_pubkey_entity.is_empty()
     {
         // todo avoid connect_...()  call if not relay action is needed and everything can be done locally.
         // todo avoid connect...() if no client is needed.
         //
-        // Connect to relays, WAIT for connection, and keep connection alive
-        // todo only use the wait version if there is no -l and there is some publish
         // also do a wait on create-user ?
-        // match client.connect().await {
-        match client.connect_and_wait().await {
-            Ok(()) => {
-                info!("connect successful.");
+        if ap.listen {
+            match client.connect().await {
+                Ok(()) => {
+                    info!("connect successful.");
+                }
+                Err(ref e) => {
+                    error!(
+                        "connect failed. Could not connect to relays. Reported error is: {:?}",
+                        e
+                    );
+                    return Err(Error::CannotConnectToRelays);
+                }
             }
-            Err(ref e) => {
-                error!(
-                    "connect failed. Could not connect to relays. Reported error is: {:?}",
+        } else {
+            // Connect to relays, WAIT for connection, and keep connection alive
+            match client.connect_and_wait().await {
+                Ok(()) => {
+                    info!("connect_and_wait successful.");
+                }
+                Err(ref e) => {
+                    error!(
+                    "connect_and_wait failed. Could not connect to relays. Reported error is: {:?}",
                     e
                 );
-                return Err(Error::CannotConnectToRelays);
+                    return Err(Error::CannotConnectToRelays);
+                }
             }
         }
     }
@@ -2314,6 +2894,18 @@ async fn main() -> Result<(), Error> {
     }
     // ap.creds.save(get_credentials_actual_path(&ap))?; // do it later
 
+    // Get pubkey entity
+    if !ap.get_pubkey_entity.is_empty() {
+        match crate::cli_get_pubkey_entity(&client, &mut ap).await {
+            Ok(()) => {
+                info!("get_pubkey_entity successful.");
+            }
+            Err(ref e) => {
+                error!("get_pubkey_entity failed. Reported error is: {:?}", e);
+            }
+        }
+    }
+
     // Publish a text note
     if !ap.publish.is_empty() {
         match crate::cli_publish(&client, &mut ap).await {
@@ -2347,46 +2939,18 @@ async fn main() -> Result<(), Error> {
             }
         }
     }
+    // Send channel messages
+    if !ap.send_channel_message.is_empty() {
+        match crate::cli_send_channel_message(&client, &mut ap).await {
+            Ok(()) => {
+                info!("send-channel-message successful.");
+            }
+            Err(ref e) => {
+                error!("send-channel-message failed. Reported error is: {:?}", e);
+            }
+        }
+    }
 
-    // Subscribe authors
-    if !ap.subscribe_author.is_empty() {
-        match crate::cli_subscribe_author(&mut client, &mut ap).await {
-            Ok(()) => {
-                debug!("subscribe_author successful. Subscriptions synchronized with credentials file.");
-            }
-            Err(ref e) => {
-                error!("subscribe_author failed. Reported error is: {:?}", e);
-            }
-        }
-    }
-    if !ap.creds.subscribed_authors.is_empty() && ap.listen {
-        let mut asf: SubscriptionFilter;
-        asf = SubscriptionFilter::new().authors(ap.creds.subscribed_authors.clone());
-        if ap.limit_number != 0 {
-            asf = asf.limit(ap.limit_number);
-        }
-        if ap.limit_days != 0 {
-            asf = asf.since((Utc::now() - Duration::days(ap.limit_days)).timestamp() as u64);
-        }
-        if ap.limit_hours != 0 {
-            asf = asf.since((Utc::now() - Duration::hours(ap.limit_hours)).timestamp() as u64);
-        }
-        if ap.limit_future_days != 0 {
-            asf = asf.until((Utc::now() - Duration::days(ap.limit_future_days)).timestamp() as u64);
-        }
-        if ap.limit_future_hours != 0 {
-            asf =
-                asf.until((Utc::now() - Duration::hours(ap.limit_future_hours)).timestamp() as u64);
-        }
-        match client.subscribe(vec![asf]).await {
-            Ok(()) => {
-                info!("subscribe to authors successful.");
-            }
-            Err(ref e) => {
-                error!("subscribe to authors failed. Reported error is: {:?}", e);
-            }
-        }
-    }
     // Subscribe keys
     if !ap.subscribe_pubkey.is_empty() {
         match crate::cli_subscribe_pubkey(&mut client, &mut ap).await {
@@ -2426,6 +2990,84 @@ async fn main() -> Result<(), Error> {
             }
         }
     }
+    // Subscribe authors
+    if !ap.subscribe_author.is_empty() {
+        match crate::cli_subscribe_author(&mut client, &mut ap).await {
+            Ok(()) => {
+                debug!("subscribe_author successful. Subscriptions synchronized with credentials file.");
+            }
+            Err(ref e) => {
+                error!("subscribe_author failed. Reported error is: {:?}", e);
+            }
+        }
+    }
+    if !ap.creds.subscribed_authors.is_empty() && ap.listen {
+        let mut asf: SubscriptionFilter;
+        asf = SubscriptionFilter::new().authors(ap.creds.subscribed_authors.clone());
+        if ap.limit_number != 0 {
+            asf = asf.limit(ap.limit_number);
+        }
+        if ap.limit_days != 0 {
+            asf = asf.since((Utc::now() - Duration::days(ap.limit_days)).timestamp() as u64);
+        }
+        if ap.limit_hours != 0 {
+            asf = asf.since((Utc::now() - Duration::hours(ap.limit_hours)).timestamp() as u64);
+        }
+        if ap.limit_future_days != 0 {
+            asf = asf.until((Utc::now() - Duration::days(ap.limit_future_days)).timestamp() as u64);
+        }
+        if ap.limit_future_hours != 0 {
+            asf =
+                asf.until((Utc::now() - Duration::hours(ap.limit_future_hours)).timestamp() as u64);
+        }
+        match client.subscribe(vec![asf]).await {
+            Ok(()) => {
+                info!("subscribe to authors successful.");
+            }
+            Err(ref e) => {
+                error!("subscribe to authors failed. Reported error is: {:?}", e);
+            }
+        }
+    }
+    // Subscribe channels
+    if !ap.subscribe_channel.is_empty() {
+        match crate::cli_subscribe_channel(&mut client, &mut ap).await {
+            Ok(()) => {
+                debug!("subscribe_channel successful. Subscriptions synchronized with credentials file.");
+            }
+            Err(ref e) => {
+                error!("subscribe_channel failed. Reported error is: {:?}", e);
+            }
+        }
+    }
+    if !ap.creds.subscribed_channels.is_empty() && ap.listen {
+        let mut csf: SubscriptionFilter;
+        csf = SubscriptionFilter::new().events(ap.creds.subscribed_channels.clone());
+        if ap.limit_number != 0 {
+            csf = csf.limit(ap.limit_number);
+        }
+        if ap.limit_days != 0 {
+            csf = csf.since((Utc::now() - Duration::days(ap.limit_days)).timestamp() as u64);
+        }
+        if ap.limit_hours != 0 {
+            csf = csf.since((Utc::now() - Duration::hours(ap.limit_hours)).timestamp() as u64);
+        }
+        if ap.limit_future_days != 0 {
+            csf = csf.until((Utc::now() - Duration::days(ap.limit_future_days)).timestamp() as u64);
+        }
+        if ap.limit_future_hours != 0 {
+            csf =
+                csf.until((Utc::now() - Duration::hours(ap.limit_future_hours)).timestamp() as u64);
+        }
+        match client.subscribe(vec![csf]).await {
+            Ok(()) => {
+                info!("subscribe to channels successful.");
+            }
+            Err(ref e) => {
+                error!("subscribe to channels failed. Reported error is: {:?}", e);
+            }
+        }
+    }
     ap.creds.save(get_credentials_actual_path(&ap))?;
 
     // notices will be published even if we do not go into handle_notification event loop
@@ -2434,7 +3076,8 @@ async fn main() -> Result<(), Error> {
     // || !ap.creds.subscribed_authors.is_empty()
     // || !ap.creds.subscribed_pubkeys.is_empty()
     {
-        let num = ap.publish.len() + ap.publish_pow.len() + ap.dm.len();
+        let num =
+            ap.publish.len() + ap.publish_pow.len() + ap.dm.len() + ap.send_channel_message.len();
         if num == 1 {
             info!(
                 "You should be receiving {:?} 'OK' message with event id for the notice once it has been relayed.",
@@ -2449,7 +3092,7 @@ async fn main() -> Result<(), Error> {
         // Handle notifications
         match client
             .handle_notifications(|notification| {
-                trace!("Notification: {:?}", notification);
+                debug!("Notification: {:?}", notification);
                 match notification {
                     ReceivedEvent(ev) => {
                         debug!("Event-Event: content {:?}, kind {:?}", ev.content, ev.kind);
@@ -2460,10 +3103,10 @@ async fn main() -> Result<(), Error> {
                             RelayMessage::Ok {event_id, status, message } => {
                                 // Notification: ReceivedMessage(Ok { event_id: 123, status: true, message: "" })
                                 // confirmation of notice having been relayed
-                                info!("Message-OK: Notice or DM was relayed. Event id is {:?}. Status is {:?} and message is {:?}. You can investigate this event by looking it up on https://nostr.com/e/{}", event_id, status, message, event_id.to_string());
+                                info!("Message-OK: Notice, DM or message was relayed. Event id is {:?}. Status is {:?} and message is {:?}. You can investigate this event by looking it up on https://nostr.com/e/{}", event_id, status, message, event_id.to_string());
                                 print_json(
                                     &json!({"event_type": "RelayMessage::Ok",
-                                        "event_type_meaning": "Notice or DM was relayed successfully.",
+                                        "event_type_meaning": "Notice, DM or message was relayed successfully.",
                                         "event_id": event_id,
                                         "status": status,
                                         "message": message,
@@ -2500,6 +3143,7 @@ async fn main() -> Result<(), Error> {
                                         },
                                         Ok(TagKind::E) => (),
                                         Ok(TagKind::Nonce) => (),
+                                        Ok(TagKind::Delegation) => todo!(),
                                         Err(_) => ()
                                     }
                                 }
@@ -2535,7 +3179,7 @@ async fn main() -> Result<(), Error> {
                                         );
                                     },
                                     Kind::Base(KindBase::ChannelMessage) => {
-                                        warn!("Subscription by {} ({}): content {:?}, kind {:?}, from pubkey {:?}", key_author, tags, event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey));
+                                        info!("Subscription by {} ({}): content {:?}, kind {:?}, from pubkey {:?}", key_author, tags, event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey));
                                         print_json(
                                             &json!({
                                                 "event_type": "RelayMessage::Event",

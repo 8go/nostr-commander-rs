@@ -9,6 +9,8 @@
 //!
 //! Usage:
 //! - run `nostr-commander-rs --help`
+//! - run `nostr-commander-rs --manual`
+//! - run `nostr-commander-rs --readme`
 //!
 //! For more information, see read the README.md
 //! <https://github.com/8go/nostr-commander-rs/blob/main/README.md>
@@ -24,7 +26,6 @@ use clap::{ColorChoice, CommandFactory, Parser, ValueEnum};
 use directories::ProjectDirs;
 // use mime::Mime;
 use chrono::{Duration, Utc};
-// use json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::env;
@@ -364,6 +365,7 @@ pub struct Args {
     contribute: bool,
 
     /// Print version number or check if a newer version exists on crates.io.
+    /// Details::
     /// If used without an argument such as '--version' it will
     /// print the version number. If 'check' is added ('--version check')
     /// then the program connects to https://crates.io and gets the version
@@ -374,27 +376,33 @@ pub struct Args {
     #[arg(short, long, value_name = "CHECK")]
     version: Option<Option<Version>>,
 
-    /// Prints very short help summary.
+    /// Prints a very short help summary.
     /// Details:: See also --help, --manual and --readme.
     #[arg(long)]
     usage: bool,
 
-    /// Prints short help.
+    /// Prints short help displaying about one line per argument.
     /// Details:: See also --usage, --manual and --readme.
     #[arg(short, long)]
     help: bool,
 
     /// Prints long help.
-    /// Details:: See also --usage, --help and --readme.
+    /// Details:: This is like a man page.
+    /// See also --usage, --help and --readme.
     #[arg(long)]
     manual: bool,
 
     /// Prints README.md file, the documenation in Markdown.
-    /// Details:: See also --usage, --help and --manual.
+    /// Details:: The README.md file will be downloaded from
+    /// Github. It is a Markdown file and it is best viewed with a
+    /// Markdown viewer.
+    /// See also --usage, --help and --manual.
     #[arg(long)]
     readme: bool,
 
-    /// Overwrite the default log level. If not used, then the default
+    /// Overwrite the default log level.
+    /// Details::
+    /// If not used, then the default
     /// log level set with environment variable 'RUST_LOG' will be used.
     /// If used, log level will be set to 'DEBUG' and debugging information
     /// will be printed.
@@ -405,6 +413,7 @@ pub struct Args {
     debug: u8,
 
     /// Set the log level by overwriting the default log level.
+    /// Details::
     /// If not used, then the default
     /// log level set with environment variable 'RUST_LOG' will be used.
     /// See also '--debug' and '--verbose'.
@@ -413,7 +422,9 @@ pub struct Args {
     #[arg(long, value_enum, default_value_t = LogLevel::default(), ignore_case = true, )]
     log_level: LogLevel,
 
-    /// Set the verbosity level. If not used, then verbosity will be
+    /// Set the verbosity level.
+    /// Details::
+    /// If not used, then verbosity will be
     /// set to low. If used once, verbosity will be high.
     /// If used more than once, verbosity will be very high.
     /// Verbosity only affects the debug information.
@@ -429,7 +440,10 @@ pub struct Args {
     // /// which sort of does the opossite for rooms.
     // #[arg(long, default_value_t = false)]
     // plain: bool,
-    /// Path to a file containing credentials.
+    //
+    //
+    /// Specify a path to a file containing credentials.
+    /// Details::
     /// At --create-user, information about the user, in particular
     /// its keys, will be written to a credentials file. By
     /// default, this file is "credentials.json". On further
@@ -446,7 +460,9 @@ pub struct Args {
         )]
     credentials: PathBuf,
 
-    /// Create a new user, i.e. a new key pair. This is usually
+    /// Create a new user, i.e. a new key pair.
+    /// Details::
+    /// This is usually
     /// done only once at the beginning. If you ever want to wipe
     /// this user, use '--delete-user' which deletes the key
     /// pair. Use this option in combination with --name,
@@ -457,13 +473,16 @@ pub struct Args {
     create_user: bool,
 
     /// Delete the current user, i.e. delete the current key pair.
+    /// Details::
     /// This will erase the key pair and other associated information
     /// like user name, display name, etc. Afterwards one can create
     /// a new user with '--create-user'.
     #[arg(long, alias = "delete-key", default_value_t = false)]
     delete_user: bool,
 
-    /// Used this to specify an optional user name. Used together with
+    /// Specify an optional user name.
+    /// Details::
+    /// Used together with
     /// '--create-user'.
     /// If this option is not set during '--create-user', the information
     /// will be queried via the keyboard. If you want to set it to empty
@@ -471,7 +490,9 @@ pub struct Args {
     #[arg(long, value_name = "USER_NAME")]
     name: Option<String>,
 
-    /// Used this to specify an optional display name. Used together with
+    /// Specify an optional display name.
+    /// Details::
+    /// Used together with
     /// '--create-user'.
     /// If this option is not set during '--create-user', the information
     /// will be queried via the keyboard. If you want to set it to empty
@@ -479,7 +500,9 @@ pub struct Args {
     #[arg(long, value_name = "DISPLAY_NAME")]
     display_name: Option<String>,
 
-    /// Used this to specify an optional description. Used together with
+    /// Specify an optional description.
+    /// Details::
+    /// Used together with
     /// '--create-user'.
     /// If this option is not set during '--create-user', the information
     /// will be queried via the keyboard. If you want to set it to empty
@@ -496,7 +519,9 @@ pub struct Args {
     #[arg(long, value_name = "URL")]
     picture: Option<Url>,
 
-    /// Used this to specify an optional nip05 name. Used together with
+    /// Specify an optional nip05 name.
+    /// Details::
+    /// Used together with
     /// '--create-user'. Provide a nip05 name like 'john@example.org'.
     /// If this option is not set during '--create-user', the information
     /// will be queried via the keyboard. If you want to set it to empty
@@ -505,6 +530,7 @@ pub struct Args {
     nip05: Option<String>,
 
     /// Publish one or multiple notes.
+    /// Details::
     /// Notes data must not be binary data, it
     /// must be text.
     /// Input piped via stdin can additionally be specified with the
@@ -546,6 +572,7 @@ pub struct Args {
     publish: Vec<String>,
 
     /// Publish one or multiple notes with proof-of-work (POW).
+    /// Details::
     /// Use also '--pow-difficulty' to specify difficulty.
     /// See also '--publish' to see how shortcut characters
     /// '-' (pipe) and '_' (streamed pipe) are handled.
@@ -553,6 +580,7 @@ pub struct Args {
     publish_pow: Vec<String>,
 
     /// Send one or multiple DMs to one given user.
+    /// Details::
     /// DM messages will be encrypted and preserve privacy.
     /// The single recipient is specified via its public key, a
     /// string in the form of 'npub1...', a Hex key, or an alias from
@@ -566,6 +594,7 @@ pub struct Args {
     dm: Vec<String>,
 
     /// Send one or multiple messages to one given channel.
+    /// Details::
     /// The single destination channel is specified via its hash.
     /// See here for a channel list: https://damus.io/channels/.
     /// The first argument
@@ -578,7 +607,9 @@ pub struct Args {
     #[arg(long, alias = "chan", value_name = "HASH+MSGS", num_args(0..), )]
     send_channel_message: Vec<String>,
 
-    /// Add one or multiple relays. A relay is specified via a URI
+    /// Add one or multiple relays.
+    /// Details::
+    /// A relay is specified via a URI
     /// that looks like 'wss://some.relay.org'. You can find relays
     /// by looking at https://github.com/aljazceru/awesome-nostr#instances.
     /// Sampler relay registries are: https://nostr-registry.netlify.app/,
@@ -586,48 +617,73 @@ pub struct Args {
     /// Examples: "wss://relay.damus.io", "wss://nostr.openchain.fr".
     /// See also '--proxy'.
     #[arg(long, value_name = "RELAY_URI", num_args(0..), )]
-    add_relay: Vec<String>,
+    add_relay: Vec<Url>,
 
-    // todo remove-relay
+    /// Specify a proxy for relays.
+    /// Details:: Used by --add-relay.
+    /// Note that this proxy will be applied to all of the relays specified
+    /// with --add-relay. If you have 3 relays with 3 different proxies, then
+    /// run the --add-relay command 3 times with 1 relay and 1 proxy each time.
+    /// An example proxy for the Tor network looks something like "127.0.0.1:9050".
+    /// If you want to use Tor via a proxy, to assure that no information
+    /// leaks you must use only one relay, i.e. the Tor relay.
+    /// If more then one relays are configured, data will be communicated to
+    /// and from all relays.
+    /// A possible relay that you can use together with a Tor proxy is
+    /// "ws://jgqaglhautb4k6e6i2g34jakxiemqp6z4wynlirltuukgkft2xuglmqd.onion".
+    #[arg(long)]
+    proxy: Option<SocketAddr>,
 
-    // /// Specify one or multiple tag to attach to notes ot DMs.
-    // #[arg(long)]
-    // tag: Vec<String>,
+    /// Remove one or multiple relays from local config file.
+    /// Details:: See --add-relay.
+    #[arg(long, value_name = "RELAY_URI", num_args(0..), )]
+    remove_relay: Vec<Url>,
+
+    // todo tag
+    /// Specify one or multiple tags to attach to notes or DMs.
+    /// Details:: Not yet implemented.
+    #[arg(long)]
+    tag: Vec<String>,
+
     /// Display current metadata.
+    /// Details:: shows data in your config file.
     #[arg(long, default_value_t = false)]
     show_metadata: bool,
 
     /// Modify existing metadata of the user.
+    /// Details::
     /// Use this option in combination with --name,
     ///  --display_name, --about, --picture, and --nip05.
     #[arg(long, default_value_t = false)]
     change_metadata: bool,
 
-    /// Optional proof-of-work (POW) difficulty.
+    /// Specify optional proof-of-work (POW) difficulty.
+    /// Details::
     /// Use with '--publish_pow' to specify difficulty.
     /// If not specified the default will be used.
     #[arg(long, value_name = "DIFFICULTY", default_value_t = POW_DIFFICULTY_DEFAULT, )]
     pow_difficulty: u8,
 
-    /// Specify a proxy. Used by --add-relay.
-    #[arg(long)]
-    proxy: Option<SocketAddr>,
-
     /// Show public key.
+    /// Details:: Displays your own public key. You can share this
+    /// with your friends or the general public.
     #[arg(long, default_value_t = false)]
     show_public_key: bool,
 
-    /// Show private, secret key. Protect this key.
+    /// Show private, secret key.
+    /// Details:: Protect this key. Do not share this with anyone.
     #[arg(long, default_value_t = false)]
     show_secret_key: bool,
 
     /// Print the user name used by "nostr-commander-rs".
+    /// Details::
     /// One can get this information also by looking at the
     /// credentials file or by using --show-metadata.
     #[arg(long)]
     whoami: bool,
 
-    /// This option decides on how the output is presented.
+    /// Select an output format.
+    /// Details:: This option decides on how the output is presented.
     /// Currently offered choices are: 'text', 'json', 'json-max',
     /// and 'json-spec'. Provide one of these choices.
     /// The default is 'text'. If you want to use the default,
@@ -656,6 +712,7 @@ pub struct Args {
     output: Output,
 
     /// Listen to events, notifications and messages.
+    /// Details::
     /// This option listens to events and messages forever. To stop, type
     /// Control-C on your keyboard. You want to listen if you want
     /// to get the event ids for published notices.
@@ -665,7 +722,8 @@ pub struct Args {
     #[arg(short, long, default_value_t = false)]
     listen: bool,
 
-    /// Add one or more contacts. Must be used in combination with
+    /// Add one or more contacts.
+    /// Details:: Must be used in combination with
     /// --alias, --key, --relay. If you want to add N new contacts,
     /// use --add-contact and provide exactly N entries in each
     /// of the 3 extra arguments. E.g. --add-contact --alias jane joe
@@ -675,41 +733,48 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     add_contact: bool,
 
-    /// Remove one or more contacts. Must be used in combination with
+    /// Remove one or more contacts.
+    /// Details:: Must be used in combination with
     /// --alias. For each entry in --alias the corresponding contact will
     /// be removed. E.g. --remove-contact --alias jane joe.
     #[arg(long, default_value_t = false)]
     remove_contact: bool,
 
     /// Display current contacts.
+    /// Details:: Prints your contact list.
     #[arg(long, default_value_t = false)]
     show_contacts: bool,
 
-    /// Provide one or multiple aliases (nicknames) for arguments
+    /// Provide one or multiple aliases (nicknames).
+    /// Details:: This is used in combination with arguments
     /// --add-contact and --remove-contact.
     #[arg(long, value_name = "ALIAS", num_args(0..), )]
     alias: Vec<String>,
 
-    /// Provide one or multiple public keys for argument
+    /// Provide one or multiple public keys.
+    /// Details:: This is used in combination with argument
     /// --add-contact. They have the form 'npub1SomeStrangeString'.
     // todo: allow Hex keys
     #[arg(long, value_name = "KEY", num_args(0..), )]
     key: Vec<String>,
 
-    /// Provide one or multiple relays for argument
+    /// Provide one or multiple relays.
+    /// Details:: This is used in combination with argument
     /// --add-contact. They have the form 'wss://some.relay.org'.
     #[arg(long, value_name = "RELAY", num_args(0..), )]
     relay: Vec<Url>,
 
-    /// Convert one or multiple public keys in Bech32 format ('npub1...') into
+    /// Convert one or multiple public keys from Npub to Hex.
+    /// Details:: Converts public keys in Bech32 format ('npub1...') into
     /// the corresponding 'hex' format.
-    /// Details:: See also --hex-to-npub.
+    /// See also --hex-to-npub.
     #[arg(long, value_name = "KEY", num_args(0..), )]
     npub_to_hex: Vec<String>,
 
-    /// Convert one or multiple public keys in 'hex' format into
+    /// Convert one or multiple public keys from Hex to Npub.
+    /// Details:: Converts public keys in 'hex' format into
     /// the corresponding Bech32 ('npub1...') format.
-    /// Details:: See also --npub-to-hex.
+    /// See also --npub-to-hex.
     #[arg(long, value_name = "KEY", num_args(0..), )]
     hex_to_npub: Vec<String>,
 
@@ -749,40 +814,66 @@ pub struct Args {
     /// Alternatively you can use the Hex form of the public key.
     /// Sometimes the public key of a public channel is referred to as
     /// channel id.
+    /// See here for a channel list: https://damus.io/channels/.
     /// Provide keys that represent public channels (see --get-pubkey-entity).
     /// See also --subscribe-pubkey and --subscribe-author which are different.
     #[arg(long, value_name = "KEY", num_args(0..), )]
     subscribe_channel: Vec<String>,
 
     // todo: unsubscribe_pubkey
-    // todo unsubscribe_author
-    // todo: unsubscribe_channel
+    /// Unsubscribe from public key.
+    /// Details: Removes one or multiple public keys from the
+    /// public key subscription list.
+    /// See --subscribe-pubkey.
+    /// Not yet implemented.
+    #[arg(long, value_name = "KEY", num_args(0..), )]
+    unsubscribe_pubkey: Vec<String>,
 
-    //
-    /// Limit the number of messages to receive when subscribing.
-    /// By default there is no limit (0).
+    // todo unsubscribe_author
+    /// Unsubscribe from author.
+    /// Details: Removes one or multiple public keys from the
+    /// author subscription list.
+    /// See --subscribe-author.
+    /// Not yet implemented.
+    #[arg(long, value_name = "KEY", num_args(0..), )]
+    unsubscribe_author: Vec<String>,
+
+    // todo: unsubscribe_channel
+    /// Unsubscribe from public channel.
+    /// Details: Removes one or multiple public keys from the
+    /// public channel subscription list.
+    /// See --subscribe-channel.
+    /// Not yet implemented.
+    #[arg(long, value_name = "KEY", num_args(0..), )]
+    unsubscribe_channel: Vec<String>,
+
+    /// Limit the number of past messages to receive when subscribing.
+    /// Details:: By default there is no limit (0), i.e. all old messages
+    /// available to the relay will be received.
     #[arg(long, value_name = "NUMBER", default_value_t = 0)]
     limit_number: u16,
 
     /// Limit the messages received to the last N days when subscribing.
-    /// By default there is no limit (0).
+    /// Details:: By default there is no limit (0), i.e. all old messages
+    /// available to the relay will be received.
     #[arg(long, alias = "since-days", value_name = "DAYS", default_value_t = 0)]
     limit_days: i64,
 
     /// Limit the messages received to the last N hours when subscribing.
-    /// By default there is no limit (0).
+    /// Details:: By default there is no limit (0), i.e. all old messages
+    /// available to the relay will be received.
     #[arg(long, alias = "since-hours", value_name = "HOURS", default_value_t = 0)]
     limit_hours: i64,
 
     /// Limit the messages received to the next N days when subscribing.
-    /// Stop receiving N days in the future.
-    /// By default there is no limit (0).
+    /// Details:: Stop receiving N days in the future.
+    /// By default there is no limit (0), i.e. you will receive events forever.
     #[arg(long, alias = "until-days", value_name = "DAYS", default_value_t = 0)]
     limit_future_days: i64,
 
     /// Limit the messages received to the last N hours when subscribing.
-    /// Stop receiving N hours in the future.
-    /// By default there is no limit (0).
+    /// Details:: Stop receiving N hours in the future.
+    /// By default there is no limit (0), i.e. you will receive events forever.
     #[arg(long, alias = "until-hours", value_name = "HOURS", default_value_t = 0)]
     limit_future_hours: i64,
 }
@@ -821,7 +912,8 @@ impl Args {
             dm: Vec::new(),
             send_channel_message: Vec::new(),
             add_relay: Vec::new(),
-            // tag: Vec::new(),
+            remove_relay: Vec::new(),
+            tag: Vec::new(),
             show_metadata: false,
             change_metadata: false,
             pow_difficulty: POW_DIFFICULTY_DEFAULT,
@@ -843,12 +935,44 @@ impl Args {
             subscribe_pubkey: Vec::new(),
             subscribe_author: Vec::new(),
             subscribe_channel: Vec::new(),
+            unsubscribe_pubkey: Vec::new(),
+            unsubscribe_author: Vec::new(),
+            unsubscribe_channel: Vec::new(),
             limit_number: 0,
             limit_days: 0,
             limit_hours: 0,
             limit_future_days: 0,
             limit_future_hours: 0,
         }
+    }
+}
+
+/// A struct for the relays. These will be serialized into JSON
+/// and written to the credentials.json file for permanent storage and
+/// future access.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Relay {
+    url: Url,
+    proxy: Option<SocketAddr>,
+}
+
+impl AsRef<Relay> for Relay {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
+impl Default for Relay {
+    fn default() -> Self {
+        Self::new(Url::parse("wss://relay.nostr.info/").unwrap(), None)
+    }
+}
+
+/// implementation of Relay struct
+impl Relay {
+    /// Default constructor
+    fn new(url: Url, proxy: Option<SocketAddr>) -> Self {
+        Self { url, proxy }
     }
 }
 
@@ -859,7 +983,7 @@ impl Args {
 pub struct Credentials {
     secret_key_bech32: String, // nsec1...// private key
     public_key_bech32: String, // npub1...
-    relays: Vec<Url>,
+    relays: Vec<Relay>,
     metadata: Metadata,
     contacts: Vec<Contact>,
     subscribed_pubkeys: Vec<XOnlyPublicKey>,
@@ -1048,54 +1172,104 @@ pub async fn readme() {
 }
 
 /// Prints the version information
-pub fn version() {
-    println!();
-    println!(
-        "  _|      _|      _|_|_|                     {}",
-        get_prog_without_ext()
-    );
-    print!("  _|_|    _|    _|             _~^~^~_       ");
-    println!("a Nostr CLI client written in Rust");
-    println!(
-        "  _|  _|  _|    _|         \\) /  o o  \\ (/   version {}",
-        get_version()
-    );
-    println!(
-        "  _|    _| |    _|           '_   -   _'     repo {}",
-        get_pkg_repository()
-    );
-    print!("  _|      _|      _|_|_|     / '-----' \\     ");
-    println!("please submit PRs to make this a better tool");
-    println!();
+pub fn version(ap: &Args) {
+    if ap.output.is_text() {
+        println!();
+        println!(
+            "  _|      _|      _|_|_|                     {}",
+            get_prog_without_ext()
+        );
+        print!("  _|_|    _|    _|             _~^~^~_       ");
+        println!("a Nostr CLI client written in Rust");
+        println!(
+            "  _|  _|  _|    _|         \\) /  o o  \\ (/   version {}",
+            get_version()
+        );
+        println!(
+            "  _|    _| |    _|           '_   -   _'     repo {}",
+            get_pkg_repository()
+        );
+        print!("  _|      _|      _|_|_|     / '-----' \\     ");
+        println!("please submit PRs to make this a better tool");
+        println!();
+    } else {
+        print_json(
+            &json!({
+                "program": get_prog_without_ext(),
+                "repo": get_pkg_repository(),
+                "version": get_version(),
+                "icon": "NC :crab:",
+            }),
+            ap.output,
+            0,
+            "",
+        );
+    }
 }
 
 /// Prints the installed version and the latest crates.io-available version
-pub fn version_check() {
-    println!("Installed version: v{}", get_version());
+pub fn version_check(ap: &Args) {
+    let key1 = "Installed version";
+    let value1 = get_version();
+    let key2: &str;
+    let value2: String;
+    let key3: &str;
+    let value3: String;
     let name = env!("CARGO_PKG_NAME");
+    let location: String = "https://crates.io/crates/".to_owned() + name;
     let version = env!("CARGO_PKG_VERSION");
     let informer = update_informer::new(registry::Crates, name, version).check_version();
     match informer {
-        Ok(Some(version)) => println!(
-            "New version is available on https://crates.io/crates/{}: {}",
-            name, version
-        ),
-        Ok(None) => println!("You are up-to-date. You already have the latest version."),
-        Err(ref e) => println!("Could not get latest version. Error reported: {:?}.", e),
+        Ok(Some(version)) => {
+            key2 = "New available version";
+            value2 = format!("{:?}", version);
+            key3 = "New version available at";
+            value3 = location;
+        }
+        Ok(None) => {
+            key2 = "Status";
+            value2 = "You are up-to-date. You already have the latest version.".to_owned();
+            key3 = "Update required";
+            value3 = "No".to_owned();
+        }
+        Err(ref e) => {
+            key2 = "Error";
+            value2 = "Could not get latest version.".to_owned();
+            key3 = "Error message";
+            value3 = format!("{:?}", e);
+        }
     };
+    print_json(
+        &json!({
+            key1: value1,
+            key2: value2,
+            key3: value3,
+        }),
+        ap.output,
+        0,
+        "",
+    );
 }
 
 /// Asks the public for help
-pub fn contribute() {
-    println!();
-    println!("This project is currently an experiment. ",);
-    println!("If you know Rust and are interested in Nostr, please have a look at the repo ");
-    println!("{}. ", get_pkg_repository());
-    println!(
-        "Please contribute code to improve the {} ",
-        get_prog_without_ext()
+pub fn contribute(ap: &Args) {
+    let text = format!(
+        "{}{}{}{}{}{}",
+        "This project is currently an experiment. ",
+        "If you know Rust and are interested in Nostr, please have a look at the repo ",
+        get_pkg_repository(),
+        ". Please contribute code to improve the ",
+        get_prog_without_ext(),
+        " Nostr CLI client. Safe!"
     );
-    println!("Nostr CLI client. Safe!");
+    print_json(
+        &json!({
+            "Contribute": text,
+        }),
+        ap.output,
+        0,
+        "",
+    );
 }
 
 /// Reads metadata item from keyboard and puts it into the Args.
@@ -1233,6 +1407,40 @@ fn get_nip05(ap: &mut Args) {
     }
 }
 
+/// Reads metadata item from keyboard.
+fn get_proxy() -> Option<SocketAddr> {
+    loop {
+        print!("Enter proxy for relay (e.g. https://127.0.0.1:9050) or leave empty for no proxy: ");
+        std::io::stdout()
+            .flush()
+            .expect("error: could not flush stdout");
+
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .expect("error: unable to read user input");
+
+        match input.trim() {
+            "" => {
+                info!("Proxy left empty. That is okay!");
+                return None;
+            }
+            _ => match SocketAddr::from_str(input.trim()) {
+                Ok(u) => {
+                    info!("proxy {:?} is accepted.", &u);
+                    return Some(u);
+                }
+                Err(ref e) => {
+                    error!(
+                        "{:?} is not a valid proxy. Try again or leave empty. Reported error is {:?}.",
+                        input.trim(), e
+                    );
+                }
+            },
+        }
+    }
+}
+
 /// Reads metadata item from keyboard and puts it into the Args.
 fn get_relays(ap: &mut Args) {
     println!("Enter one or multiple optional relays for this Nostr account.");
@@ -1250,14 +1458,15 @@ fn get_relays(ap: &mut Args) {
 
         match input.trim() {
             "" => {
-                info!("Realay left empty. That is okay!");
+                info!("Relay left empty. That is okay!");
                 repeat = false;
             }
             _ => match Url::parse(input.trim()) {
                 Ok(u) => {
-                    if u.scheme() == "wss" {
-                        ap.creds.relays.push(u.clone());
-                        info!("relay {:?} added.", &u);
+                    if u.scheme() == "wss" || u.scheme() == "ws" {
+                        let proxy = crate::get_proxy();
+                        ap.creds.relays.push(Relay::new(u.clone(), proxy));
+                        info!("relay {:?} {:?} added.", &u, proxy);
                     } else {
                         error!(
                         "{:?} is not a valid URL. Scheme is not 'wss'. Try again or leave empty.",
@@ -1314,7 +1523,7 @@ pub(crate) fn is_relay_str(relay: &str) -> bool {
 
 /// is this syntactically a valid relay string?
 pub(crate) fn is_relay_url(relay: &Url) -> bool {
-    if relay.scheme() != "wss" {
+    if relay.scheme() != "wss" && relay.scheme() != "ws" {
         return false;
     } else if relay.host_str().is_none() {
         return false;
@@ -1409,8 +1618,10 @@ pub(crate) fn cli_create_user(ap: &mut Args) -> Result<(), Error> {
         let num = ap.add_relay.len();
         let mut i = 0;
         while i < num {
-            if is_relay_str(&ap.add_relay[i]) {
-                ap.creds.relays.push(Url::parse(&ap.add_relay[i]).unwrap());
+            if is_relay_url(&ap.add_relay[i]) {
+                ap.creds
+                    .relays
+                    .push(Relay::new(ap.add_relay[i].clone(), ap.proxy));
             } else {
                 error!(
                     "Invalid relay syntax for relay {:?}. Skipping it.",
@@ -1420,7 +1631,7 @@ pub(crate) fn cli_create_user(ap: &mut Args) -> Result<(), Error> {
             i += 1;
         }
     }
-    ap.creds.relays.dedup_by(|a, b| a == b);
+    ap.creds.relays.dedup_by(|a, b| a.url == b.url);
 
     // Generate new keys
     let my_keys: Keys = Client::generate_keys();
@@ -1473,14 +1684,18 @@ pub(crate) fn add_relays_from_creds(client: &mut Client, ap: &mut Args) -> Resul
     let num = ap.creds.relays.len();
     let mut i = 0;
     while i < num {
-        match client.add_relay(ap.creds.relays[i].as_str(), None) {
+        let relay = ap.creds.relays[i].clone();
+        match client.add_relay(relay.url.as_str(), relay.proxy) {
             Ok(()) => {
-                debug!("add_relay with relay {:?} successful.", ap.creds.relays[i]);
+                debug!(
+                    "add_relay with relay {:?} with proxy {:?} successful.",
+                    relay.url, relay.proxy
+                );
             }
             Err(ref e) => {
                 error!(
-                    "Error: add_relay() returned error. Relay {:?} not added. Reported error {:?}.",
-                    ap.creds.relays[i], e
+                    "Error: add_relay() returned error. Relay {:?} with proxy {:?} not added. Reported error {:?}.",
+                    relay.url, relay.proxy, e
                 );
                 err_count += 1;
             }
@@ -1501,13 +1716,16 @@ pub(crate) fn cli_add_relay(client: &mut Client, ap: &mut Args) -> Result<(), Er
     let num = ap.add_relay.len();
     let mut i = 0;
     while i < num {
-        if is_relay_str(ap.add_relay[i].as_str()) {
-            match client.add_relay(ap.add_relay[i].as_str(), None) {
+        if is_relay_url(&ap.add_relay[i]) {
+            match client.add_relay(ap.add_relay[i].as_str(), ap.proxy) {
                 Ok(()) => {
-                    debug!("add_relay with relay {:?} successful.", ap.add_relay[i]);
+                    debug!(
+                        "add_relay with relay {:?} and proxy {:?} successful.",
+                        ap.add_relay[i], ap.proxy
+                    );
                     ap.creds
                         .relays
-                        .push(Url::parse(ap.add_relay[i].as_str()).unwrap());
+                        .push(Relay::new(ap.add_relay[i].clone(), ap.proxy));
                 }
                 Err(ref e) => {
                     error!(
@@ -1526,7 +1744,7 @@ pub(crate) fn cli_add_relay(client: &mut Client, ap: &mut Args) -> Result<(), Er
         }
         i += 1;
     }
-    ap.creds.relays.dedup_by(|a, b| a == b);
+    ap.creds.relays.dedup_by(|a, b| a.url == b.url);
     match ap.creds.save(get_credentials_actual_path(ap)) {
         Ok(()) => {
             debug!(
@@ -1547,6 +1765,17 @@ pub(crate) fn cli_add_relay(client: &mut Client, ap: &mut Args) -> Result<(), Er
     } else {
         Ok(())
     }
+}
+
+/// Handle the --remove-relay CLI argument, remove CLI args contacts from creds data structure
+pub(crate) async fn cli_remove_relay(client: &Client, ap: &mut Args) -> Result<(), Error> {
+    let num = ap.remove_relay.len();
+    let mut i = 0;
+    while i < num {
+        ap.creds.relays.retain(|x| x.url != ap.remove_relay[i]);
+        i += 1;
+    }
+    Ok(())
 }
 
 fn trim_newline(s: &mut String) -> &mut String {
@@ -2046,8 +2275,9 @@ pub(crate) async fn cli_send_channel_message(client: &Client, ap: &mut Args) -> 
         Ok(hash) => {
             let notes = &ap.send_channel_message[1..];
             // todo: any relay is fine?
-            let relay_url: Url = ap.creds.relays[0].clone();
-            send_channel_messages(client, notes, hash, relay_url).await
+            // bug: say one relay has proxy, it does matter which relay we use, but we are dumb and use the first one
+            let relay = ap.creds.relays[0].clone();
+            send_channel_messages(client, notes, hash, relay.url).await
         }
         Err(ref e) => {
             error!(
@@ -2123,7 +2353,7 @@ pub(crate) fn get_contact_alias_by_keystr(ap: &Args, pkeystr: &str) -> Option<St
     }
 }
 
-/// Handle the --add-conect CLI argument, write contacts from CLI args into creds data structure
+/// Handle the --add-contact CLI argument, write contacts from CLI args into creds data structure
 pub(crate) async fn cli_add_contact(client: &Client, ap: &mut Args) -> Result<(), Error> {
     let mut err_count = 0usize;
     let anum = ap.alias.len();
@@ -2186,7 +2416,7 @@ pub(crate) async fn cli_add_contact(client: &Client, ap: &mut Args) -> Result<()
     }
 }
 
-/// Handle the --add-conect CLI argument, remove CLI args contacts from creds data structure
+/// Handle the --remove-contact CLI argument, remove CLI args contacts from creds data structure
 pub(crate) async fn cli_remove_contact(client: &Client, ap: &mut Args) -> Result<(), Error> {
     let num = ap.alias.len();
     let mut i = 0;
@@ -2617,11 +2847,18 @@ async fn main() -> Result<(), Error> {
     eprintln!("then please consider making a code contribution. ");
     eprintln!("At the very least give it a star on Github. ");
     eprintln!("Star and make PRs at: https://github.com/8go/nostr-commander-rs ");
+    eprintln!("");
+    eprintln!("Incompatible changes between version 0.0.9 and 0.0.10.");
+    eprintln!("Incompatible changes between version 0.0.10 and 0.1.0.");
+    eprintln!("Please delete user and create new user or edit your");
+    eprintln!("credentials file and make it look similar to the example");
+    eprintln!("given in the README.md file.");
+    eprintln!("");
 
     // handle log level and debug options
     let env_org_rust_log = env::var("RUST_LOG").unwrap_or_default().to_uppercase();
-    // println!("Original log_level option is {:?}", ap.log_level);
-    // println!("Original RUST_LOG is {:?}", &env_org_rust_log);
+    // eprintln!("Original log_level option is {:?}", ap.log_level);
+    // eprintln!("Original RUST_LOG is {:?}", &env_org_rust_log);
     if ap.debug > 0 {
         // -d overwrites --log-level
         ap.log_level = LogLevel::Debug
@@ -2655,10 +2892,13 @@ async fn main() -> Result<(), Error> {
     debug!("Arguments are {:?}", ap);
 
     match ap.version {
-        None => (),                     // do nothing
-        Some(None) => crate::version(), // print version
-        Some(Some(Version::Check)) => crate::version_check(),
+        None => (),                        // do nothing
+        Some(None) => crate::version(&ap), // print version
+        Some(Some(Version::Check)) => crate::version_check(&ap),
     }
+    if ap.contribute {
+        crate::contribute(&ap);
+    };
     if ap.usage {
         crate::usage();
         return Ok(());
@@ -2674,9 +2914,6 @@ async fn main() -> Result<(), Error> {
     if ap.readme {
         crate::readme().await;
         return Ok(());
-    };
-    if ap.contribute {
-        crate::contribute();
     };
 
     if ap.create_user {
@@ -2786,6 +3023,17 @@ async fn main() -> Result<(), Error> {
             }
         }
     }
+    if !ap.remove_relay.is_empty() {
+        match crate::cli_remove_relay(&client, &mut ap).await {
+            Ok(()) => {
+                info!("remove_relay successful.");
+            }
+            Err(ref e) => {
+                error!("remove_relay failed. Reported error is: {:?}", e);
+            }
+        }
+    }
+    ap.creds.relays.dedup_by(|a, b| a.url == b.url);
 
     if ap.listen
         || !ap.publish_pow.is_empty()
@@ -3169,8 +3417,8 @@ async fn main() -> Result<(), Error> {
                                                 "subscribed_by": key_author,
                                                 "author": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
                                                 "content": event.content,
-                                                // "kind": event.kind, // writes integer like '1'
-                                                "kind": format!("{:?}",event.kind), // writes text like "Base(TextNote)"
+                                                "kind": event.kind, // writes integer like '1'
+                                                "kind_text": format!("{:?}",event.kind), // writes text like "Base(TextNote)"
                                                 "from_alias": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
                                                 "from_pubkey": event.pubkey,
                                                 "tags": tags
@@ -3187,7 +3435,8 @@ async fn main() -> Result<(), Error> {
                                                 "subscribed_by": key_author,
                                                 "author": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
                                                 "content": event.content,
-                                                "kind": format!("{:?}",event.kind),
+                                                "kind": event.kind, // writes integer like '1'
+                                                "kind_text": format!("{:?}",event.kind), // writes text like "Base(TextNote)"
                                                 "from_alias": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
                                                 "from_pubkey": event.pubkey,
                                                 "tags": tags
@@ -3231,12 +3480,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_version() {
-        assert_eq!(version(), ());
+    fn test_usage() {
+        assert_eq!(usage(), ());
     }
 
     #[test]
-    fn test_contribute() {
-        assert_eq!(contribute(), ());
+    fn test_help() {
+        assert_eq!(help(), ());
     }
 }

@@ -50,12 +50,13 @@ use nostr_sdk::{
     nostr::event::kind::KindBase,
     nostr::event::tag::TagKind,
     nostr::key::XOnlyPublicKey,
-    nostr::key::{FromBech32, KeyError, Keys, ToBech32},
+    nostr::key::{FromBech32, Keys, ToBech32},
     nostr::message::relay::RelayMessage,
     nostr::message::subscription::SubscriptionFilter,
     nostr::util::time,
     // nostr::util::nips::nip04::Error as Nip04Error,
     nostr::Metadata,
+    nostr::Sha256Hash,
     relay::pool::RelayPoolNotifications,
     subscription::Subscription,
     Client,
@@ -190,7 +191,7 @@ pub enum Error {
     NostrNip04(#[from] nostr_sdk::nostr::util::nips::nip04::Error),
 
     #[error(transparent)]
-    NostrKey(#[from] nostr_sdk::nostr::key::KeyError),
+    NostrKey(#[from] nostr_sdk::nostr::key::Error),
 
     #[error(transparent)]
     Json(#[from] serde_json::Error),
@@ -988,7 +989,7 @@ pub struct Credentials {
     contacts: Vec<Contact>,
     subscribed_pubkeys: Vec<XOnlyPublicKey>,
     subscribed_authors: Vec<XOnlyPublicKey>,
-    subscribed_channels: Vec<XOnlyPublicKey>,
+    subscribed_channels: Vec<Sha256Hash>,
 }
 
 impl AsRef<Credentials> for Credentials {
@@ -1367,8 +1368,8 @@ fn get_picture(ap: &mut Args) {
                 ap.creds.metadata.picture = None;
             }
             _ => match Url::parse(input.trim()) {
-                Ok(_) => {
-                    ap.creds.metadata.picture = Some(input.trim().to_owned());
+                Ok(url) => {
+                    ap.creds.metadata.picture = Some(url);
                     info!("Picture set to {:?}.", ap.creds.metadata.picture);
                 }
                 Err(ref e) => {
@@ -1583,7 +1584,7 @@ pub(crate) fn cli_create_user(ap: &mut Args) -> Result<(), Error> {
             }
         }
     }
-    match ap.picture.as_ref() {
+    match ap.picture.clone() {
         None => {
             get_picture(ap); // read from kb, put into metadata
         }
@@ -1594,7 +1595,7 @@ pub(crate) fn cli_create_user(ap: &mut Args) -> Result<(), Error> {
             {
                 ap.creds.metadata.picture = None;
             } else {
-                ap.creds.metadata.picture = Some(n.to_string());
+                ap.creds.metadata.picture = Some(n);
             }
         }
     }
@@ -1637,7 +1638,7 @@ pub(crate) fn cli_create_user(ap: &mut Args) -> Result<(), Error> {
     let my_keys: Keys = Client::generate_keys();
     debug!(
         "Generated private key is: {:?}",
-        my_keys.secret_key_as_str()?
+        my_keys.secret_key_as_str()
     );
     debug!(
         "Generated public  key is: {:?}",
@@ -2159,7 +2160,7 @@ pub(crate) async fn send_channel_messages(
     let mut i = 0;
     while i < num {
         let note = &notes[i];
-        trace!("send_dms: {:?}", note);
+        trace!("send_channel_message: {:?}", note);
         if note.is_empty() {
             info!("Skipping empty text note.");
             i += 1;
@@ -2613,7 +2614,7 @@ pub(crate) async fn cli_get_pubkey_entity(client: &Client, ap: &mut Args) -> Res
                         print_json(
                             &json!({
                                 "hex": pkey.to_string(),
-                                "entity": format!("{:?}",entity),
+                                "entity": entity, // prints as text like "Channel"
                             }),
                             ap.output,
                             0,
@@ -2738,16 +2739,16 @@ pub(crate) async fn cli_subscribe_author(client: &mut Client, ap: &mut Args) -> 
 pub(crate) async fn cli_subscribe_channel(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
     let mut err_count = 0usize;
     let num = ap.subscribe_channel.len();
-    let mut pubkeys = Vec::new();
+    let mut hashs = Vec::new();
     let mut i = 0;
     while i < num {
-        match str_to_pubkey(&ap.subscribe_channel[i]) {
-            Ok(pkey) => {
-                pubkeys.push(pkey);
+        match Sha256Hash::from_str(&ap.subscribe_channel[i]) {
+            Ok(hash) => {
+                hashs.push(hash);
                 debug!(
-                    "Valid key added to subscription filter. Key {:?}, Hex: {:?}.",
+                    "Valid key added to subscription filter. Key {:?}, Hash: {:?}.",
                     &ap.subscribe_channel[i],
-                    pkey.to_string()
+                    hash.to_string()
                 );
             }
             Err(ref e) => {
@@ -2760,7 +2761,7 @@ pub(crate) async fn cli_subscribe_channel(client: &mut Client, ap: &mut Args) ->
         }
         i += 1;
     }
-    ap.creds.subscribed_channels.append(&mut pubkeys);
+    ap.creds.subscribed_channels.append(&mut hashs);
     ap.creds.subscribed_channels.dedup_by(|a, b| a == b);
     if err_count != 0 {
         Err(Error::SubscriptionFailed)
@@ -3324,8 +3325,14 @@ async fn main() -> Result<(), Error> {
     // || !ap.creds.subscribed_authors.is_empty()
     // || !ap.creds.subscribed_pubkeys.is_empty()
     {
-        let num =
+        let mut num =
             ap.publish.len() + ap.publish_pow.len() + ap.dm.len() + ap.send_channel_message.len();
+        if ap.dm.len() > 1 {
+            num -= 1; //adjust num, 1st arg of dm is key not msg
+        }
+        if ap.send_channel_message.len() > 1 {
+            num -= 1; //adjust num, 1st arg of send_channel_message is key not msg
+        }
         if num == 1 {
             info!(
                 "You should be receiving {:?} 'OK' message with event id for the notice once it has been relayed.",

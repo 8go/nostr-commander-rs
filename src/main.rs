@@ -26,6 +26,7 @@ use clap::{ColorChoice, CommandFactory, Parser, ValueEnum};
 use directories::ProjectDirs;
 // use mime::Mime;
 use chrono::{Duration, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::env;
@@ -64,9 +65,9 @@ use nostr_sdk::{
     RelayPoolNotifications::ReceivedMessage,
 };
 
-// /// import nostr-sdk Client related code of general kind: create_user, delete_user, etc
-// mod client;
-// use crate::client::dummy;
+// /// import nostr-sdk Client related code of general kind: create_user, delete_user, etc // todo
+// mod client; // todo
+// use crate::client::dummy; // todo
 
 /// the version number from Cargo.toml at compile time
 const VERSION_O: Option<&str> = option_env!("CARGO_PKG_VERSION");
@@ -150,6 +151,9 @@ pub enum Error {
 
     #[error("Subscription Failed")]
     SubscriptionFailed,
+
+    #[error("Unsubscribe Failed")]
+    UnsubscribeFailed,
 
     #[error("Get Entity Failed")]
     GetEntityFailed,
@@ -350,7 +354,7 @@ impl fmt::Display for Output {
     bin_name = get_prog_without_ext(),
     color = ColorChoice::Always,
     term_width = 79,
-    after_help = "",
+    after_help = "PS: Also have a look at scripts/nostr-commander-tui.",
     disable_version_flag = true,
     disable_help_flag = true,
 )]
@@ -511,7 +515,8 @@ pub struct Args {
     #[arg(long, value_name = "DESCRIPTION")]
     about: Option<String>,
 
-    /// Used this to specify an optional picture or avatar. Used together with
+    /// Specify an optional picture or avatar.
+    /// Details:: Used together with
     /// '--create-user'. Provide a URL like 'https://example.com/avatar.png'.
     // or a local file like 'file://somepath/someimage.jpg'.
     /// If this option is not set during '--create-user', the information
@@ -605,6 +610,11 @@ pub struct Args {
     // or '--send_channel_message joe "How about pizza tonight?"'.
     /// See also '--publish' to see how shortcut characters
     /// '-' (pipe) and '_' (streamed pipe) are handled.
+    /// Optionally you can provide a relay to be used for the channel send
+    /// by using --relay. See --relay. If --relay has values the first value
+    /// from --relay will be used as relay. If --relay is not used, then
+    /// the first relay in the relay list in the credentials configuration
+    /// file will be used.
     #[arg(long, alias = "chan", value_name = "HASH+MSGS", num_args(0..), )]
     send_channel_message: Vec<String>,
 
@@ -755,13 +765,14 @@ pub struct Args {
     /// Provide one or multiple public keys.
     /// Details:: This is used in combination with argument
     /// --add-contact. They have the form 'npub1SomeStrangeString'.
-    // todo: allow Hex keys
+    /// Alternatively you can use the Hex form of the public key.
     #[arg(long, value_name = "KEY", num_args(0..), )]
     key: Vec<String>,
 
     /// Provide one or multiple relays.
-    /// Details:: This is used in combination with argument
-    /// --add-contact. They have the form 'wss://some.relay.org'.
+    /// Details:: This is used in combination with arguments
+    /// --add-contact and --send_channel_message.
+    /// Relays have the form 'wss://some.relay.org'.
     #[arg(long, value_name = "RELAY", num_args(0..), )]
     relay: Vec<Url>,
 
@@ -790,7 +801,7 @@ pub struct Args {
     get_pubkey_entity: Vec<String>,
 
     /// Subscribe to one or more public keys.
-    /// Details: Specify each
+    /// Details:: Specify each
     /// public key in form of 'npub1SomePublicKey'.
     /// Alternatively you can use the Hex form of the public key.
     /// Use this option to subscribe to an account, i.e. the key of
@@ -809,42 +820,36 @@ pub struct Args {
     #[arg(long, value_name = "KEY", num_args(0..), )]
     subscribe_author: Vec<String>,
 
-    /// Subscribe to public channels with one or more public keys of channels.
+    /// Subscribe to public channels with one or more hashes of channels.
     /// Details:: Specify each
-    /// public key in form of 'npub1SomePublicKey'.
+    /// hash in form of 'npub1SomePublicKey'.
     /// Alternatively you can use the Hex form of the public key.
-    /// Sometimes the public key of a public channel is referred to as
-    /// channel id.
+    /// Sometimes the hash of a public channel is referred to as
+    /// channel id, sometimes also as public channel key.
     /// See here for a channel list: https://damus.io/channels/.
-    /// Provide keys that represent public channels (see --get-pubkey-entity).
+    /// Provide hashes that represent public channels (see --get-pubkey-entity).
     /// See also --subscribe-pubkey and --subscribe-author which are different.
-    #[arg(long, value_name = "KEY", num_args(0..), )]
+    #[arg(long, value_name = "HASH", num_args(0..), )]
     subscribe_channel: Vec<String>,
 
-    // todo: unsubscribe_pubkey
     /// Unsubscribe from public key.
-    /// Details: Removes one or multiple public keys from the
+    /// Details:: Removes one or multiple public keys from the
     /// public key subscription list.
     /// See --subscribe-pubkey.
-    /// Not yet implemented.
     #[arg(long, value_name = "KEY", num_args(0..), )]
     unsubscribe_pubkey: Vec<String>,
 
-    // todo unsubscribe_author
     /// Unsubscribe from author.
-    /// Details: Removes one or multiple public keys from the
+    /// Details:: Removes one or multiple public keys from the
     /// author subscription list.
     /// See --subscribe-author.
-    /// Not yet implemented.
     #[arg(long, value_name = "KEY", num_args(0..), )]
     unsubscribe_author: Vec<String>,
 
-    // todo: unsubscribe_channel
     /// Unsubscribe from public channel.
-    /// Details: Removes one or multiple public keys from the
+    /// Details:: Removes one or multiple public keys from the
     /// public channel subscription list.
     /// See --subscribe-channel.
-    /// Not yet implemented.
     #[arg(long, value_name = "KEY", num_args(0..), )]
     unsubscribe_channel: Vec<String>,
 
@@ -1142,12 +1147,63 @@ fn get_prog_without_ext() -> &'static str {
 pub fn usage() {
     let help_str = Args::command().render_usage().to_string();
     println!("{}", &help_str);
+    println!("OPTIONS:");
+    // let cmd = Args::command();
+    // // println!("{:?}", cmd);
+    // // for arg in cmd.get_arguments() {
+    // //         println!("{:?}",arg);
+    // // }
+    // // for arg in cmd.get_arguments() {
+    // //         println!("{}",arg); // bug in clap, panics
+    // // }
+    // for arg in cmd.get_arguments() {
+    //     let s = arg.get_help().unwrap().to_string();
+    //     let v: Vec<&str> = s.split("Details::").collect();
+    //     let val_names = arg.get_value_names().unwrap_or(&[]);
+    //     let mut pvalnames = false;
+    //     match arg.get_num_args() {
+    //         None => {}
+    //         Some(range) => {
+    //             println!("range {:?}", range);
+    //             if range != clap::builder::ValueRange::EMPTY {
+    //                 pvalnames = true;
+    //             }
+    //         }
+    //     }
+    //     if pvalnames {
+    //         println!(
+    //             "--{} [<{}>]:  {}",
+    //             arg.get_long().unwrap(),
+    //             val_names[0],
+    //             v[0]
+    //         );
+    //     } else {
+    //         println!("--{}: {}", arg.get_long().unwrap(), v[0]);
+    //     }
+    // }
+    let help_str = Args::command().render_help().to_string();
+    let v: Vec<&str> = help_str.split('\n').collect();
+    for l in v {
+        if l.starts_with("  -") || l.starts_with("      --") {
+            println!("{}", &l);
+        }
+    }
 }
 
 /// Prints the short help
 pub fn help() {
     let help_str = Args::command().render_help().to_string();
-    println!("{}", &help_str);
+    // println!("{}", &help_str);
+    // regex to remove shortest pieces "Details:: ... \n  -"
+    // regex to remove shortest pieces "Details:: ... \n      --"
+    // regex to remove shortest pieces "Details:: ... \nPS:"
+    // 2 regex groups: delete and keep.
+    // [\S\s]*? ... match anything in a non-greedy fashion
+    // stop when either "PS:", "  -" or "      --" is reached
+    let re = Regex::new(r"(?P<del>[ ]+Details::[\S\s]*?)(?P<keep>\nPS:|\n  -|\n      --)").unwrap();
+    let after = re.replace_all(&help_str, "$keep");
+    print!("{}", &after.replace("\n\n", "\n")); // remove empty lines
+    println!("{}", "Use --manual to get more detailed help information.");
 }
 
 /// Prints the long help
@@ -1680,13 +1736,13 @@ pub(crate) fn cli_create_user(ap: &mut Args) -> Result<(), Error> {
 }
 
 /// Add relays to from Credentials to client
-pub(crate) fn add_relays_from_creds(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
+pub(crate) async fn add_relays_from_creds(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
     let mut err_count = 0u32;
     let num = ap.creds.relays.len();
     let mut i = 0;
     while i < num {
         let relay = ap.creds.relays[i].clone();
-        match client.add_relay(relay.url.as_str(), relay.proxy) {
+        match client.add_relay(relay.url.as_str(), relay.proxy).await {
             Ok(()) => {
                 debug!(
                     "add_relay with relay {:?} with proxy {:?} successful.",
@@ -1712,13 +1768,13 @@ pub(crate) fn add_relays_from_creds(client: &mut Client, ap: &mut Args) -> Resul
 
 /// Handle the --add_relay CLI argument.
 /// Add relays from --add-relay.
-pub(crate) fn cli_add_relay(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
+pub(crate) async fn cli_add_relay(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
     let mut err_count = 0u32;
     let num = ap.add_relay.len();
     let mut i = 0;
     while i < num {
         if is_relay_url(&ap.add_relay[i]) {
-            match client.add_relay(ap.add_relay[i].as_str(), ap.proxy) {
+            match client.add_relay(ap.add_relay[i].as_str(), ap.proxy).await {
                 Ok(()) => {
                     debug!(
                         "add_relay with relay {:?} and proxy {:?} successful.",
@@ -2271,14 +2327,17 @@ pub(crate) async fn cli_send_channel_message(client: &Client, ap: &mut Args) -> 
     if num < 2 {
         return Err(Error::MissingCliParameter);
     }
-    // todo: check if hash is valid, doable?
+    // todo: check if hash is valid, doable? check documentation
     match Hash::from_str(&ap.send_channel_message[0]) {
         Ok(hash) => {
             let notes = &ap.send_channel_message[1..];
-            // todo: any relay is fine?
-            // bug: say one relay has proxy, it does matter which relay we use, but we are dumb and use the first one
-            let relay = ap.creds.relays[0].clone();
-            send_channel_messages(client, notes, hash, relay.url).await
+            let relay: Url;
+            if !ap.relay.is_empty() {
+                relay = ap.relay[0].clone();
+            } else {
+                relay = ap.creds.relays[0].clone().url;
+            }
+            send_channel_messages(client, notes, hash, relay).await
         }
         Err(ref e) => {
             error!(
@@ -2603,7 +2662,7 @@ pub(crate) async fn cli_get_pubkey_entity(client: &Client, ap: &mut Args) -> Res
                     &ap.subscribe_pubkey[i],
                     pkey.to_string()
                 );
-                match client.get_entity_of_pubkey(pkey).await {
+                match client.get_entity_of(pkey.to_string()).await {
                     Ok(entity) => {
                         debug!(
                             "Valid key. Key {:?}, Hex: {:?}, Entity: {:?}",
@@ -2701,6 +2760,33 @@ pub(crate) async fn cli_subscribe_pubkey(client: &mut Client, ap: &mut Args) -> 
     }
 }
 
+/// Handle the --unsubscribe-pubkey CLI argument, remove CLI args contacts from creds data structure
+pub(crate) async fn cli_unsubscribe_pubkey(client: &Client, ap: &mut Args) -> Result<(), Error> {
+    let mut err_count = 0usize;
+    let num = ap.unsubscribe_pubkey.len();
+    let mut i = 0;
+    while i < num {
+        match str_to_pubkey(&ap.unsubscribe_pubkey[i]) {
+            Ok(pkey) => {
+                ap.creds.subscribed_pubkeys.retain(|x| x != &pkey);
+            }
+            Err(ref e) => {
+                error!(
+                    "Error: Invalid key {:?}. Not removed from subscription filter.",
+                    &ap.unsubscribe_pubkey[i]
+                );
+                err_count += 1;
+            }
+        }
+        i += 1;
+    }
+    if err_count != 0 {
+        Err(Error::UnsubscribeFailed)
+    } else {
+        Ok(())
+    }
+}
+
 /// Handle the --subscribe-author CLI argument, moving authors from CLI args into creds data structure
 pub(crate) async fn cli_subscribe_author(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
     let mut err_count = 0usize;
@@ -2730,6 +2816,33 @@ pub(crate) async fn cli_subscribe_author(client: &mut Client, ap: &mut Args) -> 
     ap.creds.subscribed_authors.dedup_by(|a, b| a == b);
     if err_count != 0 {
         Err(Error::SubscriptionFailed)
+    } else {
+        Ok(())
+    }
+}
+
+/// Handle the --unsubscribe-author CLI argument, remove CLI args contacts from creds data structure
+pub(crate) async fn cli_unsubscribe_author(client: &Client, ap: &mut Args) -> Result<(), Error> {
+    let mut err_count = 0usize;
+    let num = ap.unsubscribe_author.len();
+    let mut i = 0;
+    while i < num {
+        match str_to_pubkey(&ap.unsubscribe_author[i]) {
+            Ok(pkey) => {
+                ap.creds.subscribed_authors.retain(|x| x != &pkey);
+            }
+            Err(ref e) => {
+                error!(
+                    "Error: Invalid key {:?}. Not removed from subscription filter.",
+                    &ap.unsubscribe_author[i]
+                );
+                err_count += 1;
+            }
+        }
+        i += 1;
+    }
+    if err_count != 0 {
+        Err(Error::UnsubscribeFailed)
     } else {
         Ok(())
     }
@@ -2765,6 +2878,33 @@ pub(crate) async fn cli_subscribe_channel(client: &mut Client, ap: &mut Args) ->
     ap.creds.subscribed_channels.dedup_by(|a, b| a == b);
     if err_count != 0 {
         Err(Error::SubscriptionFailed)
+    } else {
+        Ok(())
+    }
+}
+
+/// Handle the --unsubscribe-channel CLI argument, remove CLI args contacts from creds data structure
+pub(crate) async fn cli_unsubscribe_channel(client: &Client, ap: &mut Args) -> Result<(), Error> {
+    let mut err_count = 0usize;
+    let num = ap.unsubscribe_channel.len();
+    let mut i = 0;
+    while i < num {
+        match Sha256Hash::from_str(&ap.unsubscribe_channel[i]) {
+            Ok(h) => {
+                ap.creds.subscribed_channels.retain(|x| x != &h);
+            }
+            Err(ref e) => {
+                error!(
+                    "Error: Invalid key {:?}. Not removed from subscription filter.",
+                    &ap.unsubscribe_channel[i]
+                );
+                err_count += 1;
+            }
+        }
+        i += 1;
+    }
+    if err_count != 0 {
+        Err(Error::UnsubscribeFailed)
     } else {
         Ok(())
     }
@@ -3001,7 +3141,7 @@ async fn main() -> Result<(), Error> {
     // Create new client
     let mut client = Client::new(&my_keys);
 
-    match add_relays_from_creds(&mut client, &mut ap) {
+    match add_relays_from_creds(&mut client, &mut ap).await {
         Ok(()) => {
             info!("Adding relays from credentials to client successful.");
         }
@@ -3015,7 +3155,7 @@ async fn main() -> Result<(), Error> {
     // todo clean up code to separate better local action from client/remote action
     // Add relays, if --create-user the relays have already been added
     if !ap.add_relay.is_empty() && !ap.create_user {
-        match crate::cli_add_relay(&mut client, &mut ap) {
+        match crate::cli_add_relay(&mut client, &mut ap).await {
             Ok(()) => {
                 info!("add_relay successful.");
             }
@@ -3036,6 +3176,8 @@ async fn main() -> Result<(), Error> {
     }
     ap.creds.relays.dedup_by(|a, b| a.url == b.url);
 
+    // todo: further optimize: --unsubscribe-... could remove subscriptions and make subscriptions empty,
+    // but this is not yet checked.
     if ap.listen
         || !ap.publish_pow.is_empty()
         || !ap.publish.is_empty()
@@ -3046,10 +3188,10 @@ async fn main() -> Result<(), Error> {
         || !ap.subscribe_channel.is_empty()
         || !ap.get_pubkey_entity.is_empty()
     {
-        // todo avoid connect_...()  call if not relay action is needed and everything can be done locally.
-        // todo avoid connect...() if no client is needed.
+        // design decision: avoid connect_...()  call if no relay action is needed and everything can be done locally.
+        // design decision: avoid connect...() if no client is needed.
         //
-        // also do a wait on create-user ?
+        // Do we need to connect on create-user ? No. --create-user just creates locally a key-pair.
         if ap.listen {
             match client.connect().await {
                 Ok(()) => {
@@ -3289,6 +3431,17 @@ async fn main() -> Result<(), Error> {
             }
         }
     }
+    // Unsubscribe channels
+    if !ap.unsubscribe_channel.is_empty() {
+        match crate::cli_unsubscribe_channel(&mut client, &mut ap).await {
+            Ok(()) => {
+                debug!("unsubscribe_channel successful. Subscriptions synchronized with credentials file.");
+            }
+            Err(ref e) => {
+                error!("unsubscribe_channel failed. Reported error is: {:?}", e);
+            }
+        }
+    }
     if !ap.creds.subscribed_channels.is_empty() && ap.listen {
         let mut csf: SubscriptionFilter;
         csf = SubscriptionFilter::new().events(ap.creds.subscribed_channels.clone());
@@ -3399,6 +3552,8 @@ async fn main() -> Result<(), Error> {
                                         Ok(TagKind::E) => (),
                                         Ok(TagKind::Nonce) => (),
                                         Ok(TagKind::Delegation) => todo!(),
+                                        Ok(TagKind::ContentWarning) => todo!(),
+                                        Ok(TagKind::Custom(_)) => todo!(),
                                         Err(_) => ()
                                     }
                                 }

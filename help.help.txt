@@ -1,0 +1,115 @@
+Welcome to "nostr-commander-rs", a Nostr CLI client. ─── On the first run use
+--create-user to create a user. On further runs you can publish notes, send
+private DM messages, etc.  ─── Have a look at the repo
+"https://github.com/8go/nostr-commander-rs/" and see if you can contribute code
+to improve this tool. Safe!
+Usage: nostr-commander-rs [OPTIONS]
+Options:
+      --contribute
+          Please contribute
+  -v, --version [<CHECK>]
+          Print version number or check if a newer version exists on crates.io.
+      --usage
+          Prints a very short help summary.
+  -h, --help
+          Prints short help displaying about one line per argument.
+      --manual
+          Prints long help.
+      --readme
+          Prints README.md file, the documenation in Markdown.
+  -d, --debug...
+          Overwrite the default log level.
+      --log-level <LOG_LEVEL>
+          Set the log level by overwriting the default log level.
+      --verbose...
+          Set the verbosity level.
+  -c, --credentials <PATH_TO_FILE>
+          Specify a path to a file containing credentials.
+      --create-user
+          Create a new user, i.e. a new key pair.
+      --delete-user
+          Delete the current user, i.e. delete the current key pair.
+      --name <USER_NAME>
+          Specify an optional user name.
+      --display-name <DISPLAY_NAME>
+          Specify an optional display name.
+      --about <DESCRIPTION>
+          Specify an optional description.
+      --picture <URL>
+          Specify an optional picture or avatar.
+      --nip05 <NIP05_ID>
+          Specify an optional nip05 name.
+  -p, --publish [<NOTE>...]
+          Publish one or multiple notes.
+      --publish-pow [<NOTE>...]
+          Publish one or multiple notes with proof-of-work (POW).
+      --dm [<KEY+MSGS>...]
+          Send one or multiple DMs to one given user.
+      --send-channel-message [<HASH+MSGS>...]
+          Send one or multiple messages to one given channel.
+      --add-relay [<RELAY_URI>...]
+          Add one or multiple relays.
+      --proxy <PROXY>
+          Specify a proxy for relays.
+      --remove-relay [<RELAY_URI>...]
+          Remove one or multiple relays from local config file.
+      --tag <TAG>
+          Specify one or multiple tags to attach to notes or DMs.
+      --show-metadata
+          Display current metadata.
+      --change-metadata
+          Modify existing metadata of the user.
+      --pow-difficulty <DIFFICULTY>
+          Specify optional proof-of-work (POW) difficulty.
+      --show-public-key
+          Show public key.
+      --show-secret-key
+          Show private, secret key.
+      --whoami
+          Print the user name used by "nostr-commander-rs".
+  -o, --output <OUTPUT_FORMAT>
+          Select an output format.
+  -l, --listen
+          Listen to events, notifications and messages.
+      --add-contact
+          Add one or more contacts.
+      --remove-contact
+          Remove one or more contacts.
+      --show-contacts
+          Display current contacts.
+      --alias [<ALIAS>...]
+          Provide one or multiple aliases (nicknames).
+      --key [<KEY>...]
+          Provide one or multiple public keys.
+      --relay [<RELAY>...]
+          Provide one or multiple relays.
+      --npub-to-hex [<KEY>...]
+          Convert one or multiple public keys from Npub to Hex.
+      --hex-to-npub [<KEY>...]
+          Convert one or multiple public keys from Hex to Npub.
+      --get-pubkey-entity [<KEY>...]
+          Get the entity of one or multiple public keys.
+      --subscribe-pubkey [<KEY>...]
+          Subscribe to one or more public keys.
+      --subscribe-author [<KEY>...]
+          Subscribe to authors with to one or more public keys of accounts.
+      --subscribe-channel [<HASH>...]
+          Subscribe to public channels with one or more hashes of channels.
+      --unsubscribe-pubkey [<KEY>...]
+          Unsubscribe from public key.
+      --unsubscribe-author [<KEY>...]
+          Unsubscribe from author.
+      --unsubscribe-channel [<KEY>...]
+          Unsubscribe from public channel.
+      --limit-number <NUMBER>
+          Limit the number of past messages to receive when subscribing.
+      --limit-days <DAYS>
+          Limit the messages received to the last N days when subscribing.
+      --limit-hours <HOURS>
+          Limit the messages received to the last N hours when subscribing.
+      --limit-future-days <DAYS>
+          Limit the messages received to the next N days when subscribing.
+      --limit-future-hours <HOURS>
+          Limit the messages received to the last N hours when subscribing.
+PS: Also have a look at scripts/nostr-commander-tui.
+Use --manual to get more detailed help information.

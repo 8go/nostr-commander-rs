@@ -6,9 +6,9 @@
 #   help_help_pre = """ ...
 #   """
 #
-#   in the matrix_commander.py file with the content of the
+#   in the src/main.rs file with the content of the
 #   newly created `help.help.pre.txt` file
-# - runs a diff on the previous and new matrix_commander.py to show the changes
+# - runs a diff on the previous and new src/main.rs to show the changes
 
 
 import re
@@ -24,7 +24,7 @@ now = datetime.now()
 date_string = now.strftime("%Y%m%d-%H%M%S")
 
 helpfile = "help.help.pre.txt"
-filename = "matrix_commander/matrix_commander.py"
+filename = "src/main.rs"
 executable = "scripts/create-help-help-pre.sh"
 
 if isfile(filename) and access(filename, R_OK):

@@ -1,0 +1,55 @@
+Usage: nostr-commander-rs [OPTIONS]
+OPTIONS:
+      --contribute
+  -v, --version [<CHECK>]
+      --usage
+  -h, --help
+      --manual
+      --readme
+  -d, --debug...
+      --log-level <LOG_LEVEL>
+      --verbose...
+  -c, --credentials <PATH_TO_FILE>
+      --create-user
+      --delete-user
+      --name <USER_NAME>
+      --display-name <DISPLAY_NAME>
+      --about <DESCRIPTION>
+      --picture <URL>
+      --nip05 <NIP05_ID>
+  -p, --publish [<NOTE>...]
+      --publish-pow [<NOTE>...]
+      --dm [<KEY+MSGS>...]
+      --send-channel-message [<HASH+MSGS>...]
+      --add-relay [<RELAY_URI>...]
+      --proxy <PROXY>
+      --remove-relay [<RELAY_URI>...]
+      --tag <TAG>
+      --show-metadata
+      --change-metadata
+      --pow-difficulty <DIFFICULTY>
+      --show-public-key
+      --show-secret-key
+      --whoami
+  -o, --output <OUTPUT_FORMAT>
+  -l, --listen
+      --add-contact
+      --remove-contact
+      --show-contacts
+      --alias [<ALIAS>...]
+      --key [<KEY>...]
+      --relay [<RELAY>...]
+      --npub-to-hex [<KEY>...]
+      --hex-to-npub [<KEY>...]
+      --get-pubkey-entity [<KEY>...]
+      --subscribe-pubkey [<KEY>...]
+      --subscribe-author [<KEY>...]
+      --subscribe-channel [<HASH>...]
+      --unsubscribe-pubkey [<KEY>...]
+      --unsubscribe-author [<KEY>...]
+      --unsubscribe-channel [<KEY>...]
+      --limit-number <NUMBER>
+      --limit-days <DAYS>
+      --limit-hours <HOURS>
+      --limit-future-days <DAYS>
+      --limit-future-hours <HOURS>

@@ -150,6 +150,7 @@ Usage: nostr-commander-rs [OPTIONS]
 Options:
       --contribute
           Please contribute
+
   -v, --version [<CHECK>]
           Print version number or check if a newer version exists on crates.io.
           Details:: If used without an argument such as '--version' it will
@@ -158,21 +159,29 @@ Options:
           number of latest stable release. There is no "calling home" on every
           run, only a "check crates.io" upon request. Your privacy is
           protected. New release is neither downloaded, nor installed. It just
-          informs you [possible values: check]
+          informs you
+
+          Possible values:
+          - check: Check if there is a newer version available
+
       --usage
           Prints a very short help summary. Details:: See also --help, --manual
           and --readme
+
   -h, --help
           Prints short help displaying about one line per argument. Details::
           See also --usage, --manual and --readme
+
       --manual
           Prints long help. Details:: This is like a man page. See also
           --usage, --help and --readme
+
       --readme
           Prints README.md file, the documenation in Markdown. Details:: The
           README.md file will be downloaded from Github. It is a Markdown file
           and it is best viewed with a Markdown viewer. See also --usage,
           --help and --manual
+
   -d, --debug...
           Overwrite the default log level. Details:: If not used, then the
           default log level set with environment variable 'RUST_LOG' will be
@@ -181,17 +190,29 @@ Options:
           DEBUG'. See also '--log-level'. '-d' takes precedence over
           '--log-level'. Additionally, have a look also at the option
           '--verbose'
+
       --log-level <LOG_LEVEL>
           Set the log level by overwriting the default log level. Details:: If
           not used, then the default log level set with environment variable
-          'RUST_LOG' will be used. See also '--debug' and '--verbose' [default:
-          none] [possible values: none, error, warn, info, debug, trace]
+          'RUST_LOG' will be used. See also '--debug' and '--verbose'
+          
+          [default: none]
+
+          Possible values:
+          - none:  None: not set, default
+          - error: Error: Indicates to print only errors
+          - warn:  Warn: Indicates to print warnings and errors
+          - info:  Info: Indicates to to print info, warn and errors
+          - debug: Debug: Indicates to to print debug and the rest
+          - trace: Trace: Indicates to to print everything
+
       --verbose...
           Set the verbosity level. Details:: If not used, then verbosity will
           be set to low. If used once, verbosity will be high. If used more
           than once, verbosity will be very high. Verbosity only affects the
           debug information. So, if '--debug' is not used then '--verbose' will
           be ignored
+
   -c, --credentials <PATH_TO_FILE>
           Specify a path to a file containing credentials. Details:: At
           --create-user, information about the user, in particular its keys,
@@ -199,8 +220,11 @@ Options:
           "credentials.json". On further runs the credentials file is read to
           permit acting as this established Nostr user. If this option is
           provided, the provided path to a file will be used as credentials
-          file instead of the default one [default:
+          file instead of the default one
+          
+          [default:
           /home/user/.local/share/nostr-commander-rs/credentials.json]
+
       --create-user
           Create a new user, i.e. a new key pair. Details:: This is usually
           done only once at the beginning. If you ever want to wipe this user,
@@ -208,39 +232,45 @@ Options:
           combination with --name, --display_name, --about, --picture, and
           --nip05. Also highly recommended that you use this option together
           with --add-relay
+
       --delete-user
           Delete the current user, i.e. delete the current key pair. Details::
           This will erase the key pair and other associated information like
           user name, display name, etc. Afterwards one can create a new user
           with '--create-user'
+
       --name <USER_NAME>
           Specify an optional user name. Details:: Used together with
           '--create-user'. If this option is not set during '--create-user',
           the information will be queried via the keyboard. If you want to set
           it to empty and not be queried, provide an empty string ''
+
       --display-name <DISPLAY_NAME>
           Specify an optional display name. Details:: Used together with
           '--create-user'. If this option is not set during '--create-user',
           the information will be queried via the keyboard. If you want to set
           it to empty and not be queried, provide an empty string ''
+
       --about <DESCRIPTION>
           Specify an optional description. Details:: Used together with
           '--create-user'. If this option is not set during '--create-user',
           the information will be queried via the keyboard. If you want to set
           it to empty and not be queried, provide an empty string ''
+
       --picture <URL>
-          Used this to specify an optional picture or avatar. Used together
-          with '--create-user'. Provide a URL like
-          'https://example.com/avatar.png'. If this option is not set during
-          '--create-user', the information will be queried via the keyboard. If
-          you want to set it to empty and not be queried, provide this URL
-          'none:'
+          Specify an optional picture or avatar. Details:: Used together with
+          '--create-user'. Provide a URL like 'https://example.com/avatar.png'.
+          If this option is not set during '--create-user', the information
+          will be queried via the keyboard. If you want to set it to empty and
+          not be queried, provide this URL 'none:'
+
       --nip05 <NIP05_ID>
           Specify an optional nip05 name. Details:: Used together with
           '--create-user'. Provide a nip05 name like 'john@example.org'. If
           this option is not set during '--create-user', the information will
           be queried via the keyboard. If you want to set it to empty and not
           be queried, provide an empty string ''
+
   -p, --publish [<NOTE>...]
           Publish one or multiple notes. Details:: Notes data must not be
           binary data, it must be text. Input piped via stdin can additionally
@@ -270,11 +300,13 @@ Options:
           input instantly. If you want to send the literal letter '_' then
           escape it and send '\_'. '_' can be used only once. And either '-' or
           '_' can be used
+
       --publish-pow [<NOTE>...]
           Publish one or multiple notes with proof-of-work (POW). Details:: Use
           also '--pow-difficulty' to specify difficulty. See also '--publish'
           to see how shortcut characters '-' (pipe) and '_' (streamed pipe) are
           handled
+
       --dm [<KEY+MSGS>...]
           Send one or multiple DMs to one given user. Details:: DM messages
           will be encrypted and preserve privacy. The single recipient is
@@ -284,6 +316,7 @@ Options:
           "npub1SomeStrangeNumbers" "First msg" "Second msg"' or '--dm joe "How
           about pizza tonight?"'. See also '--publish' to see how shortcut
           characters '-' (pipe) and '_' (streamed pipe) are handled
+
       --send-channel-message [<HASH+MSGS>...]
           Send one or multiple messages to one given channel. Details:: The
           single destination channel is specified via its hash. See here for a
@@ -291,7 +324,12 @@ Options:
           channel hash, all further arguments are texts to be sent. E.g.
           '-send_channel_message "SomeChannelHash" "First msg" "Second msg"'.
           See also '--publish' to see how shortcut characters '-' (pipe) and
-          '_' (streamed pipe) are handled
+          '_' (streamed pipe) are handled. Optionally you can provide a relay
+          to be used for the channel send by using --relay. See --relay. If
+          --relay has values the first value from --relay will be used as
+          relay. If --relay is not used, then the first relay in the relay list
+          in the credentials configuration file will be used
+
       --add-relay [<RELAY_URI>...]
           Add one or multiple relays. Details:: A relay is specified via a URI
           that looks like 'wss://some.relay.org'. You can find relays by
@@ -300,6 +338,7 @@ Options:
           https://nostr.info/, or https://nostr.watch/. Examples:
           "wss://relay.damus.io", "wss://nostr.openchain.fr". See also
           '--proxy'
+
       --proxy <PROXY>
           Specify a proxy for relays. Details:: Used by --add-relay. Note that
           this proxy will be applied to all of the relays specified with
@@ -312,32 +351,43 @@ Options:
           and from all relays. A possible relay that you can use together with
           a Tor proxy is
           "ws://jgqaglhautb4k6e6i2g34jakxiemqp6z4wynlirltuukgkft2xuglmqd.onion"
+
       --remove-relay [<RELAY_URI>...]
           Remove one or multiple relays from local config file. Details:: See
           --add-relay
+
       --tag <TAG>
           Specify one or multiple tags to attach to notes or DMs. Details:: Not
           yet implemented
+
       --show-metadata
           Display current metadata. Details:: shows data in your config file
+
       --change-metadata
           Modify existing metadata of the user. Details:: Use this option in
           combination with --name, --display_name, --about, --picture, and
           --nip05
+
       --pow-difficulty <DIFFICULTY>
           Specify optional proof-of-work (POW) difficulty. Details:: Use with
           '--publish_pow' to specify difficulty. If not specified the default
-          will be used [default: 20]
+          will be used
+          
+          [default: 20]
+
       --show-public-key
           Show public key. Details:: Displays your own public key. You can
           share this with your friends or the general public
+
       --show-secret-key
           Show private, secret key. Details:: Protect this key. Do not share
           this with anyone
+
       --whoami
           Print the user name used by "nostr-commander-rs". Details:: One can
           get this information also by looking at the credentials file or by
           using --show-metadata
+
   -o, --output <OUTPUT_FORMAT>
           Select an output format. Details:: This option decides on how the
           output is presented. Currently offered choices are: 'text', 'json',
@@ -356,8 +406,22 @@ Options:
           Option 'json-spec' only prints information that adheres 1-to-1 to the
           Nostr Specification. Currently this type is not supported. If no data
           is available that corresponds exactly with the Nostr Specification,
-          no data will be printed [default: text] [possible values: text, json,
-          json-max, json-spec]
+          no data will be printed
+          
+          [default: text]
+
+          Possible values:
+          - text:
+            Text: Indicates to print human readable text, default
+          - json:
+            Json: Indicates to print output in Json format
+          - json-max:
+            Json Max: Indicates to to print the maximum anount of output in
+            Json format
+          - json-spec:
+            Json Spec: Indicates to to print output in Json format, but only
+            data that is according to Nostr Specifications
+
   -l, --listen
           Listen to events, notifications and messages. Details:: This option
           listens to events and messages forever. To stop, type Control-C on
@@ -365,6 +429,7 @@ Options:
           for published notices. Subscriptions do not automatically turn
           listening on. If you want to listen to your subscriptions, you must
           use --listen
+
       --add-contact
           Add one or more contacts. Details:: Must be used in combination with
           --alias, --key, --relay. If you want to add N new contacts, use
@@ -373,31 +438,40 @@ Options:
           npub1JanesPublicKey npub1JoesPublicKey --relay
           "wss://janes.relay.org" "wss://joes.relay.org". Aliases must be
           unique. Alias can be seen as a nickname
+
       --remove-contact
           Remove one or more contacts. Details:: Must be used in combination
           with --alias. For each entry in --alias the corresponding contact
           will be removed. E.g. --remove-contact --alias jane joe
+
       --show-contacts
           Display current contacts. Details:: Prints your contact list
+
       --alias [<ALIAS>...]
           Provide one or multiple aliases (nicknames). Details:: This is used
           in combination with arguments --add-contact and --remove-contact
+
       --key [<KEY>...]
           Provide one or multiple public keys. Details:: This is used in
           combination with argument --add-contact. They have the form
-          'npub1SomeStrangeString'
+          'npub1SomeStrangeString'. Alternatively you can use the Hex form of
+          the public key
+
       --relay [<RELAY>...]
           Provide one or multiple relays. Details:: This is used in combination
-          with argument --add-contact. They have the form
-          'wss://some.relay.org'
+          with arguments --add-contact and --send_channel_message. Relays have
+          the form 'wss://some.relay.org'
+
       --npub-to-hex [<KEY>...]
           Convert one or multiple public keys from Npub to Hex. Details::
           Converts public keys in Bech32 format ('npub1...') into the
           corresponding 'hex' format. See also --hex-to-npub
+
       --hex-to-npub [<KEY>...]
           Convert one or multiple public keys from Hex to Npub. Details::
           Converts public keys in 'hex' format into the corresponding Bech32
           ('npub1...') format. See also --npub-to-hex
+
       --get-pubkey-entity [<KEY>...]
           Get the entity of one or multiple public keys. Details:: This will
           show you for every public key given if the key represents a Nostr
@@ -405,12 +479,14 @@ Options:
           also return "Unknown" if the entity of the key cannot be determined.
           E.g. this can be helpful to determine if you want to use
           --subscribe-author or --subscribe-channel
+
       --subscribe-pubkey [<KEY>...]
-          Subscribe to one or more public keys. Details: Specify each public
+          Subscribe to one or more public keys. Details:: Specify each public
           key in form of 'npub1SomePublicKey'. Alternatively you can use the
           Hex form of the public key. Use this option to subscribe to an
           account, i.e. the key of an individual. See also --subscribe-channel
           which are different
+
       --subscribe-author [<KEY>...]
           Subscribe to authors with to one or more public keys of accounts.
           Details:: Specify each public key in form of 'npub1SomePublicKey'.
@@ -418,47 +494,66 @@ Options:
           option to subscribe to a Nostr accounts (usually individuals).
           Provide keys that represent accounts (see --get-pubkey-entity). See
           also --subscribe-pubkey and --subscribe-channel which are different
-      --subscribe-channel [<KEY>...]
-          Subscribe to public channels with one or more public keys of
-          channels. Details:: Specify each public key in form of
-          'npub1SomePublicKey'. Alternatively you can use the Hex form of the
-          public key. Sometimes the public key of a public channel is referred
-          to as channel id. See here for a channel list:
-          https://damus.io/channels/. Provide keys that represent public
+
+      --subscribe-channel [<HASH>...]
+          Subscribe to public channels with one or more hashes of channels.
+          Details:: Specify each hash in form of 'npub1SomePublicKey'.
+          Alternatively you can use the Hex form of the public key. Sometimes
+          the hash of a public channel is referred to as channel id, sometimes
+          also as public channel key. See here for a channel list:
+          https://damus.io/channels/. Provide hashes that represent public
           channels (see --get-pubkey-entity). See also --subscribe-pubkey and
           --subscribe-author which are different
+
       --unsubscribe-pubkey [<KEY>...]
-          Unsubscribe from public key. Details: Removes one or multiple public
-          keys from the public key subscription list. See --subscribe-pubkey.
-          Not yet implemented
+          Unsubscribe from public key. Details:: Removes one or multiple public
+          keys from the public key subscription list. See --subscribe-pubkey
+
       --unsubscribe-author [<KEY>...]
-          Unsubscribe from author. Details: Removes one or multiple public keys
-          from the author subscription list. See --subscribe-author. Not yet
-          implemented
+          Unsubscribe from author. Details:: Removes one or multiple public
+          keys from the author subscription list. See --subscribe-author
+
       --unsubscribe-channel [<KEY>...]
-          Unsubscribe from public channel. Details: Removes one or multiple
+          Unsubscribe from public channel. Details:: Removes one or multiple
           public keys from the public channel subscription list. See
-          --subscribe-channel. Not yet implemented
+          --subscribe-channel
+
       --limit-number <NUMBER>
           Limit the number of past messages to receive when subscribing.
           Details:: By default there is no limit (0), i.e. all old messages
-          available to the relay will be received [default: 0]
+          available to the relay will be received
+          
+          [default: 0]
+
       --limit-days <DAYS>
           Limit the messages received to the last N days when subscribing.
           Details:: By default there is no limit (0), i.e. all old messages
-          available to the relay will be received [default: 0]
+          available to the relay will be received
+          
+          [default: 0]
+
       --limit-hours <HOURS>
           Limit the messages received to the last N hours when subscribing.
           Details:: By default there is no limit (0), i.e. all old messages
-          available to the relay will be received [default: 0]
+          available to the relay will be received
+          
+          [default: 0]
+
       --limit-future-days <DAYS>
           Limit the messages received to the next N days when subscribing.
           Details:: Stop receiving N days in the future. By default there is no
-          limit (0), i.e. you will receive events forever [default: 0]
+          limit (0), i.e. you will receive events forever
+          
+          [default: 0]
+
       --limit-future-hours <HOURS>
           Limit the messages received to the last N hours when subscribing.
           Details:: Stop receiving N hours in the future. By default there is
-          no limit (0), i.e. you will receive events forever [default: 0]
+          no limit (0), i.e. you will receive events forever
+          
+          [default: 0]
+
+PS: Also have a look at scripts/nostr-commander-tui.
 
 ```
 

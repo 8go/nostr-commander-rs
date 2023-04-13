@@ -15,6 +15,8 @@ type fzf >/dev/null 2>&1 || {
     exit 0
 }
 
+EXE=nostr-commander-rs
+
 # Instruction on how to use fzf
 echo "Set env variables EDITOR and VISUAL to change the editor being used."
 echo "Use tab to select the correct arguments in the correct order."
@@ -22,14 +24,14 @@ sleep 1
 # generate the short command options list
 # run it throu fzf, run it through editor, execute it
 # shellcheck disable=SC2046 # quoting will
-PATH=".:./target/release/:./target/debug/:$PATH" nostr-commander-rs --usage |
-    sed '1,/^OPTIONS:/d' | 
+PATH=".:./target/release/:./target/debug/:$PATH" $EXE --usage |
+    sed '1,/^Options:/d' | 
     sed "s/^  -., /      /g" |
     sed "s/^      //g" |
     sed "s/^$//g" | sort |
-    echo -n "nostr-commander-rs $(fzf -m)" | xargs | vipe | /bin/bash
+    echo -n "$EXE $(fzf -m)" | xargs | vipe | /bin/bash
 
 # to force a specific editor do this: e.g. forcing to use "nano"
-# PATH=".:./target/release/:./target/debug/:$PATH" nostr-commander-rs --usage |
-#     sed '1,/^OPTIONS:/d' | sed "s/^  -., /      /g" | sed "s/^      //g" | sed "s/^$//g" | sort |
-#     echo -n "nostr-commander-rs $(fzf -m)" | EDITOR=nano VISUAL=nano vipe | /bin/bash
+# PATH=".:./target/release/:./target/debug/:$PATH" $EXE --usage |
+#     sed '1,/^Options:/d' | sed "s/^  -., /      /g" | sed "s/^      //g" | sed "s/^$//g" | sort |
+#     echo -n "$EXE $(fzf -m)" | EDITOR=nano VISUAL=nano vipe | /bin/bash

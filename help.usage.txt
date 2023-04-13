@@ -1,5 +1,5 @@
 Usage: nostr-commander-rs [OPTIONS]
-OPTIONS:
+Options:
       --contribute
   -v, --version [<CHECK>]
       --usage

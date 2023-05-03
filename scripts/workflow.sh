@@ -7,6 +7,34 @@ echo "You have written some code? Let's publish it."
 
 # https://askubuntu.com/questions/1705/how-can-i-create-a-select-menu-in-a-shell-script
 PS3='Please enter your choice: '
+OPT1="rustup self update # update rustup"
+OPT2="rustup update stable # update rust"
+OPTC="Continue"
+OPTQ="Quit"
+options=("$OPT1" "$OPT2" "$OPTC" "$OPTQ")
+select opt in "${options[@]}"; do
+    if [ "${REPLY,,}" == "c" ]; then opt="$OPTC"; fi
+    if [ "${REPLY,,}" == "q" ]; then opt="$OPTQ"; fi
+    case ${opt} in
+    "$OPT1" | "$OPT2" )
+        OPTE=${opt%%#*} # remove everything after first #
+        echo "Performing: $OPTE"
+        $OPTE
+        continue
+        ;;
+    "$OPTC")
+        echo "On to next step."
+        break
+        ;;
+    "$OPTQ" | "quit")
+        echo "Quitting program."
+        exit 0
+        ;;
+    *) echo "invalid option $REPLY" ;;
+    esac
+done
+
+PS3='Please enter your choice: '
 OPT1="git pull # get the latest from Github"
 OPTC="Continue"
 OPTQ="Quit"
@@ -74,7 +102,7 @@ OPT5="cargo build"
 OPT6="scripts/create-help-usage.sh        # create help usage file"
 OPT7="scripts/create-help-help.sh         # create help help file"
 OPT8="scripts/update-2-help-manual.py     # update help manual file, puts it also into README.md"
-OPT9="cargo clippy                        # linting"
+OPT9="cargo clippy --fix                  # linting"
 OPT10="cargo fmt                           # beautifying"
 OPTC="Continue"
 OPTQ="Quit"

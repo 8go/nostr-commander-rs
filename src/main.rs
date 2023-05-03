@@ -47,6 +47,7 @@ use nostr_sdk::{
     bitcoin::hashes::sha256::Hash,
     nostr::event::kind::Kind,
     nostr::event::tag::TagKind,
+    nostr::event::tag::UncheckedUrl,
     nostr::key::Keys,
     nostr::key::XOnlyPublicKey,
     nostr::message::relay::RelayMessage,
@@ -583,8 +584,9 @@ pub struct Args {
     /// Use also '--pow-difficulty' to specify difficulty.
     /// See also '--publish' to see how shortcut characters
     /// '-' (pipe) and '_' (streamed pipe) are handled.
+    /// Disabled since version nostr-commander-rs 0.2.0 (nostr-sdk 0.21).
     #[arg(long, alias = "pow", value_name = "NOTE", num_args(0..), )]
-    publish_pow: Vec<String>,
+    publish_pow: Vec<String>, // ToDo: remove this option
 
     /// Send one or multiple DMs to one given user.
     /// Details::
@@ -1947,116 +1949,117 @@ pub(crate) async fn cli_publish(client: &Client, ap: &mut Args) -> Result<(), Er
     }
 }
 
-/// Handle the --publish_pow CLI argument
-/// Publish a POW text note
-pub(crate) async fn cli_publish_pow(client: &Client, ap: &mut Args) -> Result<(), Error> {
-    let mut err_count = 0usize;
-    let num = ap.publish_pow.len();
-    let mut i = 0;
-    while i < num {
-        let note = &ap.publish_pow[i];
-        trace!("publish: {:?}", note);
-        if note.is_empty() {
-            info!("Skipping empty text note.");
-            i += 1;
-            continue;
-        };
-        if note == "--" {
-            info!("Skipping '--' text note as these are used to separate arguments.");
-            i += 1;
-            continue;
-        };
-        // - map to - (stdin pipe)
-        // \- maps to text r'-', a 1-letter message
-        let fnote = if note == r"-" {
-            let mut line = String::new();
-            if atty::is(Stream::Stdin) {
-                print!("Message: ");
-                std::io::stdout()
-                    .flush()
-                    .expect("error: could not flush stdout");
-                io::stdin().read_line(&mut line)?;
-            } else {
-                io::stdin().read_to_string(&mut line)?;
-            }
-            line
-        } else if note == r"_" {
-            let mut eof = false;
-            while !eof {
-                let mut line = String::new();
-                match io::stdin().read_line(&mut line) {
-                    // If this function returns Ok(0), the stream has reached EOF.
-                    Ok(n) => {
-                        if n == 0 {
-                            eof = true;
-                            debug!("Reached EOF of pipe stream.");
-                        } else {
-                            debug!(
-                                "Read {n} bytes containing \"{}\\n\" from pipe stream.",
-                                trim_newline(&mut line.clone())
-                            );
-                            debug!("Be patient, hashing ...");
-                            match client.publish_pow_text_note(&line, &[], ap.pow_difficulty).await {
-                                Ok(event_id) => debug!(
-                                    "Publish_pow_text_note number {:?} from pipe stream sent successfully. {:?}, event_id {:?}",
-                                    i, &line, event_id
-                                ),
-                                Err(ref e) => {
-                                    err_count += 1;
-                                    error!(
-                                        "Publish_pow_text_note number {:?} from pipe stream failed. {:?}",
-                                        i, &line
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    Err(ref e) => {
-                        err_count += 1;
-                        error!("Error: reading from pipe stream reported {}", e);
-                    }
-                }
-            }
-            "".to_owned()
-        } else if note == r"\-" {
-            "-".to_string()
-        } else if note == r"\_" {
-            "_".to_string()
-        } else if note == r"\-\-" {
-            "--".to_string()
-        } else if note == r"\-\-\-" {
-            "---".to_string()
-        } else {
-            note.to_string()
-        };
-        if fnote.is_empty() {
-            info!("Skipping empty text note.");
-            i += 1;
-            continue;
-        }
-
-        debug!("Be patient, hashing ...");
-        match client
-            .publish_pow_text_note(&fnote, &[], ap.pow_difficulty)
-            .await
-        {
-            Ok(ref event_id) => debug!(
-                "Publish_pow_text_note number {:?} sent successfully. {:?}, event_id {:?}",
-                i, &fnote, event_id
-            ),
-            Err(ref e) => {
-                err_count += 1;
-                error!("Publish_pow_text_note number {:?} failed. {:?}", i, &fnote);
-            }
-        }
-        i += 1;
-    }
-    if err_count != 0 {
-        Err(Error::PublishPowFailed)
-    } else {
-        Ok(())
-    }
-}
+// publish_pow_text_note discontinued since nostr-sdk v0.21.
+// /// Handle the --publish_pow CLI argument
+// /// Publish a POW text note
+// pub(crate) async fn cli_publish_pow(client: &Client, ap: &mut Args) -> Result<(), Error> {
+//     let mut err_count = 0usize;
+//     let num = ap.publish_pow.len();
+//     let mut i = 0;
+//     while i < num {
+//         let note = &ap.publish_pow[i];
+//         trace!("publish: {:?}", note);
+//         if note.is_empty() {
+//             info!("Skipping empty text note.");
+//             i += 1;
+//             continue;
+//         };
+//         if note == "--" {
+//             info!("Skipping '--' text note as these are used to separate arguments.");
+//             i += 1;
+//             continue;
+//         };
+//         // - map to - (stdin pipe)
+//         // \- maps to text r'-', a 1-letter message
+//         let fnote = if note == r"-" {
+//             let mut line = String::new();
+//             if atty::is(Stream::Stdin) {
+//                 print!("Message: ");
+//                 std::io::stdout()
+//                     .flush()
+//                     .expect("error: could not flush stdout");
+//                 io::stdin().read_line(&mut line)?;
+//             } else {
+//                 io::stdin().read_to_string(&mut line)?;
+//             }
+//             line
+//         } else if note == r"_" {
+//             let mut eof = false;
+//             while !eof {
+//                 let mut line = String::new();
+//                 match io::stdin().read_line(&mut line) {
+//                     // If this function returns Ok(0), the stream has reached EOF.
+//                     Ok(n) => {
+//                         if n == 0 {
+//                             eof = true;
+//                             debug!("Reached EOF of pipe stream.");
+//                         } else {
+//                             debug!(
+//                                 "Read {n} bytes containing \"{}\\n\" from pipe stream.",
+//                                 trim_newline(&mut line.clone())
+//                             );
+//                             debug!("Be patient, hashing ...");
+//                             match client.publish_text_note(&line, &[], ap.pow_difficulty).await {
+//                                 Ok(event_id) => debug!(
+//                                     "Publish_pow_text_note number {:?} from pipe stream sent successfully. {:?}, event_id {:?}",
+//                                     i, &line, event_id
+//                                 ),
+//                                 Err(ref e) => {
+//                                     err_count += 1;
+//                                     error!(
+//                                         "Publish_pow_text_note number {:?} from pipe stream failed. {:?}",
+//                                         i, &line
+//                                     );
+//                                 }
+//                             }
+//                         }
+//                     }
+//                     Err(ref e) => {
+//                         err_count += 1;
+//                         error!("Error: reading from pipe stream reported {}", e);
+//                     }
+//                 }
+//             }
+//             "".to_owned()
+//         } else if note == r"\-" {
+//             "-".to_string()
+//         } else if note == r"\_" {
+//             "_".to_string()
+//         } else if note == r"\-\-" {
+//             "--".to_string()
+//         } else if note == r"\-\-\-" {
+//             "---".to_string()
+//         } else {
+//             note.to_string()
+//         };
+//         if fnote.is_empty() {
+//             info!("Skipping empty text note.");
+//             i += 1;
+//             continue;
+//         }
+//
+//         debug!("Be patient, hashing ...");
+//         match client
+//             .publish_pow_text_note(&fnote, &[], ap.pow_difficulty)
+//             .await
+//         {
+//             Ok(ref event_id) => debug!(
+//                 "Publish_pow_text_note number {:?} sent successfully. {:?}, event_id {:?}",
+//                 i, &fnote, event_id
+//             ),
+//             Err(ref e) => {
+//                 err_count += 1;
+//                 error!("Publish_pow_text_note number {:?} failed. {:?}", i, &fnote);
+//             }
+//         }
+//         i += 1;
+//     }
+//     if err_count != 0 {
+//         Err(Error::PublishPowFailed)
+//     } else {
+//         Ok(())
+//     }
+// }
 
 /// Publish DMs.
 pub(crate) async fn send_dms(
@@ -2462,9 +2465,10 @@ pub(crate) async fn cli_add_contact(client: &Client, ap: &mut Args) -> Result<()
         match str_to_pubkey(key) {
             Ok(pkey) => {
                 debug!("Valid key for contact. Key {:?}, {:?}.", key, pkey);
+                let rurl = ap.relay[i].clone();
                 ap.creds.contacts.push(Contact::new(
                     pkey,
-                    Some(ap.relay[i].to_string().clone()),
+                    Some(UncheckedUrl::from(rurl)),
                     Some(ap.alias[i].trim().to_string()),
                 ));
                 debug!("Added contact. Key {:?}, {:?}.", key, pkey);
@@ -3199,7 +3203,7 @@ async fn main() -> Result<(), Error> {
     // todo: further optimize: --unsubscribe-... could remove subscriptions and make subscriptions empty,
     // but this is not yet checked.
     if ap.listen
-        || !ap.publish_pow.is_empty()
+        // || !ap.publish_pow.is_empty() // publish_pow_text_note discontinued since nostr-sdk v0.21.
         || !ap.publish.is_empty()
         || !ap.dm.is_empty()
         || !ap.send_channel_message.is_empty()
@@ -3300,17 +3304,18 @@ async fn main() -> Result<(), Error> {
             }
         }
     }
-    // Publish a POW text note
-    if !ap.publish_pow.is_empty() {
-        match crate::cli_publish_pow(&client, &mut ap).await {
-            Ok(()) => {
-                info!("publish_pow successful.");
-            }
-            Err(ref e) => {
-                error!("publish_pow failed. Reported error is: {:?}", e);
-            }
-        }
-    }
+    // publish_pow_text_note discontinued since nostr-sdk v0.21.
+    // // Publish a POW text note
+    // if !ap.publish_pow.is_empty() {
+    //     match crate::cli_publish_pow(&client, &mut ap).await {
+    //         Ok(()) => {
+    //             info!("publish_pow successful.");
+    //         }
+    //         Err(ref e) => {
+    //             error!("publish_pow failed. Reported error is: {:?}", e);
+    //         }
+    //     }
+    // }
     // Send DMs
     if !ap.dm.is_empty() {
         match crate::cli_dm(&client, &mut ap).await {
@@ -3381,7 +3386,11 @@ async fn main() -> Result<(), Error> {
     }
     if !ap.creds.subscribed_authors.is_empty() && ap.listen {
         let mut asf: Filter;
-        asf = Filter::new().authors(ap.creds.subscribed_authors.clone());
+        asf = Filter::new();
+        for author in &ap.creds.subscribed_authors {
+            debug!("adding author {:?} to filter.", author);
+            asf = asf.author(author.to_string());
+        }
         if ap.limit_number != 0 {
             asf = asf.limit(ap.limit_number);
         }
@@ -3460,8 +3469,7 @@ async fn main() -> Result<(), Error> {
     // || !ap.creds.subscribed_authors.is_empty()
     // || !ap.creds.subscribed_pubkeys.is_empty()
     {
-        let mut num =
-            ap.publish.len() + ap.publish_pow.len() + ap.dm.len() + ap.send_channel_message.len();
+        let mut num = ap.publish.len() + ap.dm.len() + ap.send_channel_message.len(); // + ap.publish_pow.len() // publish_pow_text_note discontinued since nostr-sdk v0.21.
         if ap.dm.len() > 1 {
             num -= 1; //adjust num, 1st arg of dm is key not msg
         }
@@ -3481,7 +3489,7 @@ async fn main() -> Result<(), Error> {
         }
         // Handle notifications
         match client
-            .handle_notifications(|notification| {
+            .handle_notifications(|notification| async {
                 debug!("Notification: {:?}", notification);
                 match notification {
                     Shutdown => {
@@ -3604,6 +3612,9 @@ async fn main() -> Result<(), Error> {
                                     },
                             RelayMessage::Auth { challenge } =>  {
                                         debug!("Received Message-Event Auth");
+                                    },
+                            RelayMessage::Count { subscription_id, count } =>  {
+                                        debug!("Received Message-Event Count {:?}", count);
                                     },
                         }
                     }

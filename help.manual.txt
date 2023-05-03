@@ -164,7 +164,8 @@ Options:
           Publish one or multiple notes with proof-of-work (POW). Details:: Use
           also '--pow-difficulty' to specify difficulty. See also '--publish'
           to see how shortcut characters '-' (pipe) and '_' (streamed pipe) are
-          handled
+          handled. Disabled since version nostr-commander-rs 0.2.0 (nostr-sdk
+          0.21)
 
       --dm [<KEY+MSGS>...]
           Send one or multiple DMs to one given user. Details:: DM messages

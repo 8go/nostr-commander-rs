@@ -89,7 +89,9 @@ jobs:
           cp ./target/release/nostr-commander-rs nostr-commander-rs/
           cp README.md nostr-commander-rs/
           cp LICENSE nostr-commander-rs/
-          cp help.txt nostr-commander-rs/
+          cp help.help.txt nostr-commander-rs/
+          cp help.manual.txt nostr-commander-rs/
+          cp help.usage.txt nostr-commander-rs/
           tar -zcvf ./nostr-commander-rs_${TAG_NAME}_linux.tar.gz nostr-commander-rs
           # tar -zcvf ./nostr-commander-rs_linux.tar.gz nostr-commander-rs
           sha256sum ./nostr-commander-rs_${TAG_NAME}_linux.tar.gz > ./nostr-commander-rs_${TAG_NAME}_linux.tar.gz.sha256sum
@@ -138,7 +140,7 @@ jobs:
           # ARCHIVE_TYPES: tar.gz
           UPLOAD_MODE: none
           MINIFY: true
-          EXTRA_FILES: "README.md LICENSE help.txt"
+          EXTRA_FILES: "README.md LICENSE help.help.txt help.manual.txt help.usage.txt"
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
@@ -154,7 +156,7 @@ jobs:
           # ARCHIVE_TYPES: tar.gz
           UPLOAD_MODE: none
           MINIFY: true
-          EXTRA_FILES: "README.md LICENSE help.txt"
+          EXTRA_FILES: "README.md LICENSE help.help.txt help.manual.txt help.usage.txt"
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:

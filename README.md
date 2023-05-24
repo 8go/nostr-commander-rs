@@ -412,15 +412,11 @@ Options:
           [default: text]
 
           Possible values:
-          - text:
-            Text: Indicates to print human readable text, default
-          - json:
-            Json: Indicates to print output in Json format
-          - json-max:
-            Json Max: Indicates to to print the maximum anount of output in
+          - text:      Text: Indicates to print human readable text, default
+          - json:      Json: Indicates to print output in Json format
+          - json-max:  Json Max: Indicates to to print the maximum anount of output in
             Json format
-          - json-spec:
-            Json Spec: Indicates to to print output in Json format, but only
+          - json-spec: Json Spec: Indicates to to print output in Json format, but only
             data that is according to Nostr Specifications
 
   -l, --listen

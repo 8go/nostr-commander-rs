@@ -41,13 +41,11 @@ use thiserror::Error;
 use tracing::{debug, enabled, error, info, trace, warn, Level};
 use tracing_subscriber;
 use update_informer::{registry, Check};
-use url::Url;
 
 use nostr_sdk::{
     bitcoin::hashes::sha256::Hash,
     nostr::event::kind::Kind,
     nostr::event::tag::TagKind,
-    nostr::event::tag::UncheckedUrl,
     nostr::key::Keys,
     nostr::key::XOnlyPublicKey,
     nostr::message::relay::RelayMessage,
@@ -56,15 +54,15 @@ use nostr_sdk::{
     nostr::types::time::Timestamp,
     // nostr::util::nips::nip04::Error as Nip04Error,
     nostr::Metadata,
+    nostr::UncheckedUrl,
     prelude::{FromBech32, FromSkStr, ToBech32}, //from_vech32 from_sk_str to_bech32
     relay::RelayPoolNotification,
     ChannelId,
     Client,
     Contact,
     EventId,
-    RelayPoolNotification::Event,
-    RelayPoolNotification::Message,
-    RelayPoolNotification::Shutdown,
+    RelayPoolNotification::{Event, Message, RelayStatus, Shutdown, Stop},
+    Url,
 };
 
 // /// import nostr-sdk Client related code of general kind: create_user, delete_user, etc // todo
@@ -2113,7 +2111,7 @@ pub(crate) async fn send_dms(
                                 "Read {n} bytes containing \"{}\\n\" from pipe stream.",
                                 trim_newline(&mut line.clone())
                             );
-                            match client.send_direct_msg(recipient.public_key(), &line).await {
+                            match client.send_direct_msg(recipient.public_key(), &line, None).await {
                                 Ok(event_id) => debug!(
                                     "send_direct_msg number {:?} from pipe stream sent successfully. {:?}, sent to {:?}, event_id {:?}",
                                     i, &line, recipient.public_key(), event_id
@@ -2152,7 +2150,10 @@ pub(crate) async fn send_dms(
             continue;
         }
 
-        match client.send_direct_msg(recipient.public_key(), &fnote).await {
+        match client
+            .send_direct_msg(recipient.public_key(), &fnote, None)
+            .await
+        {
             Ok(ref event_id) => debug!(
                 "DM message number {:?} sent successfully. {:?}, sent to {:?}, event_id {:?}.",
                 i,
@@ -3492,9 +3493,16 @@ async fn main() -> Result<(), Error> {
             .handle_notifications(|notification| async {
                 debug!("Notification: {:?}", notification);
                 match notification {
+                    Stop => {
+                        debug!("Stop: stopping");
+                        // todo: zzz stopp
+                    }
                     Shutdown => {
                         debug!("Shutdown: shutting down");
                         // todo: zzz shutdown
+                    }
+                    RelayStatus { url, status } => {
+                        debug!("Event-RelayStatus: url {:?}, relaystatus {:?}", url, status);
                     }
                     Event(url, ev) => {
                         debug!("Event-Event: url {:?}, content {:?}, kind {:?}", url, ev.content, ev.kind);
@@ -3604,9 +3612,6 @@ async fn main() -> Result<(), Error> {
                                     _ => ()
                                 }
                             },
-                            RelayMessage::Empty => {
-                                        debug!("Received Message-Event Empty");
-                                    },
                             RelayMessage::EndOfStoredEvents(subscription_id) =>  {
                                         debug!("Received Message-Event EndOfStoredEvents");
                                     },
@@ -3619,7 +3624,7 @@ async fn main() -> Result<(), Error> {
                         }
                     }
                 }
-                Ok(())
+                Ok(false)
             })
             .await
         {

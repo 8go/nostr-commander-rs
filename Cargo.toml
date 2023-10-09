@@ -2,7 +2,7 @@
 
 [package]
 name = "nostr-commander"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 description = "simple but convenient CLI-based Nostr client app for publishing,sending and subscribing"
 documentation = "https://docs.rs/nostr-commander"
@@ -20,22 +20,22 @@ publish = true
 [dependencies]
 anyhow = "1.0"
 # 0.20
-nostr-sdk = { version = "0.21", features = ["blocking", "all-nips", "nip04", "nip06"] }
-tokio = { version = "1.27", features = ["full"] }
-clap = { version = "4.2", features = ["derive", "color", "wrap_help", "unicode"] }
+nostr-sdk = { version = "0.24", features = ["blocking", "all-nips", "nip04", "nip06"] }
+tokio = { version = "1.33", features = ["full"] }
+clap = { version = "4.4", features = ["derive", "color", "wrap_help", "unicode"] }
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-url = { version = "2.3", features = ["serde"] }
+url = { version = "2.4", features = ["serde"] }
 serde_json = "1.0"
 tracing-subscriber = "0.3"
 tracing = "0.1"
 directories = "5.0"
-update-informer = "1.0"
+update-informer = "1.1"
 chrono = "0.4"
 json = "0.12"
 atty = "0.2"
 reqwest = "0.11"
-regex = "1.7"
+regex = "1.9"
 
 
 [dev-dependencies]

@@ -3207,27 +3207,29 @@ async fn main() -> Result<(), Error> {
             .handle_notifications(|notification| async {
                 debug!("Notification: {:?}", notification);
                 match notification {
-                    Stop => {
-                        debug!("Stop: stopping");
-                        // todo: zzz stopp
-                    }
-                    Shutdown => {
+                    RelayPoolNotification::Shutdown => {
                         debug!("Shutdown: shutting down");
                         // todo: zzz shutdown
                     }
-                    RelayStatus { url, status } => {
-                        debug!("Event-RelayStatus: url {:?}, relaystatus {:?}", url, status);
+                    RelayStatus { relay_url, status } => {
+                        debug!("Event-RelayStatus: url {:?}, relaystatus {:?}", relay_url, status);
                     }
-                    Event { url, ev } => {
-                        debug!("Event-Event: url {:?}, content {:?}, kind {:?}", url, ev.content, ev.kind);
+                    Event { relay_url, subscription_id, event } => {
+                        debug!("Event-Event: url {:?}, content {:?}, kind {:?}", relay_url, event.content, event.kind);
                     }
-                    Message {url, msg } => {
-                        // debug!("Message: {:?}", msg);
-                        match msg {
+                    Message {relay_url, message } => {
+                        // debug!("Message: {:?}", message);
+                        match message {
                             RelayMessage::Ok {event_id, status, message } => {
                                 // Notification: ReceivedMessage(Ok { event_id: 123, status: true, message: "" })
                                 // confirmation of notice having been relayed
-                                info!("Message-OK: Notice, DM or message was relayed. Url is {:?}, Event id is {:?}. Status is {:?} and message is {:?}. You can investigate this event by looking it up on https://nostr.com/e/{}", url, event_id, status, message, event_id.to_string());
+                                info!(concat!(
+                                        r#"Message-OK: Notice, DM or message was relayed. Url is {:?}"#,
+                                        r#" Event id is {:?}. Status is {:?} and message is {:?}. You"#,
+                                        r#" can investigate this event by looking it up on https://nostr.com/e/{}"#
+                                      ),
+                                      relay_url, event_id, status, message, event_id.to_string()
+                                );
                                 print_json(
                                     &json!({"event_type": "RelayMessage::Ok",
                                         "event_type_meaning": "Notice, DM or message was relayed successfully.",
@@ -3249,7 +3251,7 @@ async fn main() -> Result<(), Error> {
                                 let first = true;
                                 for t in &event.tags {
                                     match t.kind() {
-                                        TagKind::P => {
+                                        TagKind::SingleLetter(P) => {
                                             trace!("tag vector: {:?}", t.as_vec());
                                             //match t.content() {
                                             //    Some(c) => {
@@ -3266,7 +3268,7 @@ async fn main() -> Result<(), Error> {
                                             //    None => ()
                                             //}
                                         },
-                                        TagKind::E => info!("E message received. Not implemented."),  // todo!(),
+                                        TagKind::SingleLetter(E) => info!("E message received. Not implemented."),  // todo!(),
                                         TagKind::Nonce => info!("Nonce message received. Not implemented."),  // todo!(),
                                         TagKind::Delegation => info!("Delegation message received. Not implemented."),  // todo!(),
                                         TagKind::ContentWarning => info!("ContentWarning message received. Not implemented."),  // todo!(),
@@ -3327,14 +3329,23 @@ async fn main() -> Result<(), Error> {
                                 }
                             },
                             RelayMessage::EndOfStoredEvents(subscription_id) =>  {
-                                        debug!("Received Message-Event EndOfStoredEvents");
-                                    },
+                                debug!("Received Message-Event EndOfStoredEvents");
+                            },
                             RelayMessage::Auth { challenge } =>  {
-                                        debug!("Received Message-Event Auth");
-                                    },
+                                debug!("Received Message-Event Auth");
+                            },
                             RelayMessage::Count { subscription_id, count } =>  {
-                                        debug!("Received Message-Event Count {:?}", count);
-                                    },
+                                debug!("Received Message-Event Count {:?}", count);
+                            },
+                            RelayMessage::Closed { subscription_id, message } => {
+                                debug!("Received Message-Event Closed {:?}", message);
+                            },
+                            RelayMessage::NegMsg { subscription_id, message } => {
+                                debug!("Received Message-Event NegMsg {:?}", message);
+                            },
+                            RelayMessage::NegErr { subscription_id, code } => {
+                                debug!("Received Message-Event NegErr {:?}", code);
+                            },
                         }
                     }
                 }

@@ -44,7 +44,6 @@ use update_informer::{registry, Check};
 
 use nostr_sdk::prelude::*;
 use nostr_sdk::{
-   bitcoin::hashes::sha256::Hash,
    RelayPoolNotification::{Event, Message, RelayStatus},
 };
 
@@ -968,7 +967,7 @@ pub struct Credentials {
     subscribed_pubkeys: Vec<PublicKey>,
     subscribed_authors: Vec<PublicKey>,
     // todo: zzz subscribed_channels should be EventId's ?
-    subscribed_channels: Vec<Hash>,
+    subscribed_channels: Vec<PublicKey>,
 }
 
 impl AsRef<Credentials> for Credentials {
@@ -2221,7 +2220,7 @@ pub(crate) async fn cli_send_channel_message(client: &Client, ap: &mut Args) -> 
         }
         Err(ref e) => {
             error!(
-                "Error: Not a valid hash (channel id). Cannot send this channel message. Aborting. Hash {:?}, 1st Msg {:?} ",
+                "Error: Not a valid hash (channel id). Cannot send this channel message. Aborting. hash {:?}, 1st Msg {:?} ",
                 ap.send_channel_message[0],
                 ap.send_channel_message[1]
             );
@@ -2673,11 +2672,11 @@ pub(crate) async fn cli_subscribe_channel(client: &mut Client, ap: &mut Args) ->
     let mut hashs = Vec::new();
     let mut i = 0;
     while i < num {
-        match Hash::from_str(&ap.subscribe_channel[i]) {
+        match PublicKey::from_str(&ap.subscribe_channel[i]) {
             Ok(hash) => {
                 hashs.push(hash);
                 debug!(
-                    "Valid key added to subscription filter. Key {:?}, Hash: {:?}.",
+                    "Valid key added to subscription filter. Key {:?}, hash: {:?}.",
                     &ap.subscribe_channel[i],
                     hash.to_string()
                 );
@@ -2707,11 +2706,11 @@ pub(crate) async fn cli_unsubscribe_channel(client: &Client, ap: &mut Args) -> R
     let num = ap.unsubscribe_channel.len();
     let mut i = 0;
     while i < num {
-        match Hash::from_str(&ap.unsubscribe_channel[i]) {
+        match PublicKey::from_str(&ap.unsubscribe_channel[i]) {
             Ok(hash) => {
                 ap.creds.subscribed_channels.retain(|x| x != &hash);
                 debug!(
-                    "Valid key removed from subscription filter. Key {:?}, Hash: {:?}.",
+                    "Valid key removed from subscription filter. Key {:?}, hash: {:?}.",
                     &ap.unsubscribe_channel[i],
                     hash.to_string()
                 );
@@ -3133,27 +3132,8 @@ async fn main() -> Result<(), Error> {
         }
     }
     if !ap.creds.subscribed_pubkeys.is_empty() && ap.listen {
-        let mut ksf: Filter;
-        ksf = Filter::new().pubkeys(ap.creds.subscribed_pubkeys.clone());
-        if ap.limit_number != 0 {
-            ksf = ksf.limit(ap.limit_number);
-        }
-        if ap.limit_days != 0 {
-            ksf = ksf.since(Timestamp::now() - Duration::new(ap.limit_days * 24 * 60 * 60, 0));
-        }
-        if ap.limit_hours != 0 {
-            ksf = ksf.since(Timestamp::now() - Duration::new(ap.limit_hours * 60 * 60, 0));
-        }
-        if ap.limit_future_days != 0 {
-            ksf =
-                ksf.until(Timestamp::now() + Duration::new(ap.limit_future_days * 24 * 60 * 60, 0));
-        }
-        if ap.limit_future_hours != 0 {
-            ksf = ksf.until(Timestamp::now() + Duration::new(ap.limit_future_hours * 60 * 60, 0));
-        }
-        info!("subscribe to keys initiated.");
-        client.subscribe(vec![ksf], None).await;
-        info!("subscribe to keys successful.");
+        let mut filter = Filter::new().pubkeys(ap.creds.subscribed_pubkeys.clone());
+        subscribe_to_filter(&client, &ap, filter, "keys").await;
     }
     // Subscribe authors
     if !ap.subscribe_author.is_empty() {
@@ -3167,31 +3147,8 @@ async fn main() -> Result<(), Error> {
         }
     }
     if !ap.creds.subscribed_authors.is_empty() && ap.listen {
-        let mut asf: Filter;
-        asf = Filter::new();
-        for author in &ap.creds.subscribed_authors {
-            debug!("adding author {:?} to filter.", author);
-            asf = asf.author(author.clone());
-        }
-        if ap.limit_number != 0 {
-            asf = asf.limit(ap.limit_number);
-        }
-        if ap.limit_days != 0 {
-            asf = asf.since(Timestamp::now() - Duration::new(ap.limit_days * 24 * 60 * 60, 0));
-        }
-        if ap.limit_hours != 0 {
-            asf = asf.since(Timestamp::now() - Duration::new(ap.limit_hours * 60 * 60, 0));
-        }
-        if ap.limit_future_days != 0 {
-            asf =
-                asf.until(Timestamp::now() + Duration::new(ap.limit_future_days * 24 * 60 * 60, 0));
-        }
-        if ap.limit_future_hours != 0 {
-            asf = asf.until(Timestamp::now() + Duration::new(ap.limit_future_hours * 60 * 60, 0));
-        }
-        info!("subscribe to authors initiated.");
-        client.subscribe(vec![asf], None).await;
-        info!("subscribe to authors successful.");
+        let mut filter = Filter::new().authors(ap.creds.subscribed_authors.clone());
+        subscribe_to_filter(&client, &ap, filter, "authors").await;
     }
     // Subscribe channels
     if !ap.subscribe_channel.is_empty() {
@@ -3216,32 +3173,8 @@ async fn main() -> Result<(), Error> {
         }
     }
     if !ap.creds.subscribed_channels.is_empty() && ap.listen {
-        let mut csf: Filter;
-        let mut ev_vec: Vec<EventId> = Vec::new();
-        for sc in &mut ap.creds.subscribed_channels {
-            ev_vec.push(EventId::from(*sc));
-        }
-
-        csf = Filter::new().events(ev_vec);
-        if ap.limit_number != 0 {
-            csf = csf.limit(ap.limit_number);
-        }
-        if ap.limit_days != 0 {
-            csf = csf.since(Timestamp::now() - Duration::new(ap.limit_days * 24 * 60 * 60, 0));
-        }
-        if ap.limit_hours != 0 {
-            csf = csf.since(Timestamp::now() - Duration::new(ap.limit_hours * 60 * 60, 0));
-        }
-        if ap.limit_future_days != 0 {
-            csf =
-                csf.until(Timestamp::now() + Duration::new(ap.limit_future_days * 24 * 60 * 60, 0));
-        }
-        if ap.limit_future_hours != 0 {
-            csf = csf.until(Timestamp::now() + Duration::new(ap.limit_future_hours * 60 * 60, 0));
-        }
-        info!("subscribe to channels initiated.");
-        client.subscribe(vec![csf]).await;
-        info!("subscribe to channels successful.");
+        let mut filter = Filter::new().pubkeys(ap.creds.subscribed_channels.clone());
+        subscribe_to_filter(&client, &ap, filter, "channels").await;
     }
     ap.creds.save(get_credentials_actual_path(&ap))?;
 
@@ -3420,6 +3353,33 @@ async fn main() -> Result<(), Error> {
 
     debug!("Good bye");
     Ok(())
+}
+
+async fn subscribe_to_filter(
+    client: &Client,
+    ap: &Args,
+    mut filter: Filter,
+    filter_name: &str
+) {
+    if ap.limit_number != 0 {
+        filter = filter.limit(ap.limit_number);
+    }
+    if ap.limit_days != 0 {
+        filter = filter.since(Timestamp::now() - Duration::new(ap.limit_days * 24 * 60 * 60, 0));
+    }
+    if ap.limit_hours != 0 {
+        filter = filter.since(Timestamp::now() - Duration::new(ap.limit_hours * 60 * 60, 0));
+    }
+    if ap.limit_future_days != 0 {
+        filter =
+            filter.until(Timestamp::now() + Duration::new(ap.limit_future_days * 24 * 60 * 60, 0));
+    }
+    if ap.limit_future_hours != 0 {
+        filter = filter.until(Timestamp::now() + Duration::new(ap.limit_future_hours * 60 * 60, 0));
+    }
+    info!("subscribe to {filter_name} initiated.");
+    client.subscribe(vec![filter], None).await;
+    info!("subscribe to {filter_name} successful.");
 }
 
 /// Future test cases will be put here

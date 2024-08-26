@@ -21,11 +21,10 @@
 #![allow(unused_imports)] // Todo
 
 use atty::Stream;
-// use bitcoin_hashes::sha256::Hash;
 use clap::{ColorChoice, CommandFactory, Parser, ValueEnum};
 use directories::ProjectDirs;
-// use mime::Mime;
 use chrono::Utc;
+use core::cmp::Ordering;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -37,32 +36,15 @@ use std::net::SocketAddr;
 use std::panic;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::time::Duration;
 use thiserror::Error;
 use tracing::{debug, enabled, error, info, trace, warn, Level};
 use tracing_subscriber;
 use update_informer::{registry, Check};
 
+use nostr_sdk::prelude::*;
 use nostr_sdk::{
-    bitcoin::hashes::sha256::Hash,
-    nostr::event::kind::Kind,
-    nostr::event::tag::TagKind,
-    nostr::key::Keys,
-    nostr::key::XOnlyPublicKey,
-    nostr::message::relay::RelayMessage,
-    nostr::message::subscription::Filter,
-    nostr::prelude::core::time::Duration,
-    nostr::types::time::Timestamp,
-    // nostr::util::nips::nip04::Error as Nip04Error,
-    nostr::Metadata,
-    nostr::UncheckedUrl,
-    prelude::{FromBech32, FromSkStr, ToBech32}, //from_vech32 from_sk_str to_bech32
-    relay::RelayPoolNotification,
-    ChannelId,
-    Client,
-    Contact,
-    EventId,
-    RelayPoolNotification::{Event, Message, RelayStatus, Shutdown, Stop},
-    Url,
+   RelayPoolNotification::{Event, Message, RelayStatus},
 };
 
 // /// import nostr-sdk Client related code of general kind: create_user, delete_user, etc // todo
@@ -791,16 +773,6 @@ pub struct Args {
     #[arg(long, value_name = "KEY", num_args(0..), )]
     hex_to_npub: Vec<String>,
 
-    /// Get the entity of one or multiple public keys.
-    /// Details:: This will show you
-    /// for every public key given if the key represents a Nostr account
-    /// (usually an individual) or a public Nostr channel. It might also
-    /// return "Unknown" if the entity of the key cannot be determined.
-    /// E.g. this can be helpful to determine if you want to use
-    /// --subscribe-author or --subscribe-channel.
-    #[arg(long, value_name = "KEY", num_args(0..), )]
-    get_pubkey_entity: Vec<String>,
-
     /// Subscribe to one or more public keys.
     /// Details:: Specify each
     /// public key in form of 'npub1SomePublicKey'.
@@ -938,7 +910,6 @@ impl Args {
             relay: Vec::new(),
             npub_to_hex: Vec::new(),
             hex_to_npub: Vec::new(),
-            get_pubkey_entity: Vec::new(),
             subscribe_pubkey: Vec::new(),
             subscribe_author: Vec::new(),
             subscribe_channel: Vec::new(),
@@ -993,10 +964,10 @@ pub struct Credentials {
     relays: Vec<Relay>,
     metadata: Metadata,
     contacts: Vec<Contact>,
-    subscribed_pubkeys: Vec<XOnlyPublicKey>,
-    subscribed_authors: Vec<XOnlyPublicKey>,
-    // todo: zzz subscribed_channels should be ChannelId's ?
-    subscribed_channels: Vec<Hash>,
+    subscribed_pubkeys: Vec<PublicKey>,
+    subscribed_authors: Vec<PublicKey>,
+    // todo: zzz subscribed_channels should be EventId's ?
+    subscribed_channels: Vec<PublicKey>,
 }
 
 impl AsRef<Credentials> for Credentials {
@@ -1734,31 +1705,37 @@ pub(crate) fn cli_create_user(ap: &mut Args) -> Result<(), Error> {
 /// Add relays to from Credentials to client
 pub(crate) async fn add_relays_from_creds(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
     let mut err_count = 0u32;
-    let num = ap.creds.relays.len();
-    let mut i = 0;
-    while i < num {
-        let relay = ap.creds.relays[i].clone();
-        match client.add_relay(relay.url.as_str(), relay.proxy).await {
-            Ok(()) => {
-                debug!(
-                    "add_relay with relay {:?} with proxy {:?} successful.",
-                    relay.url, relay.proxy
-                );
-            }
-            Err(ref e) => {
-                error!(
-                    "Error: add_relay() returned error. Relay {:?} with proxy {:?} not added. Reported error {:?}.",
-                    relay.url, relay.proxy, e
-                );
-                err_count += 1;
-            }
+    for relay in &ap.creds.relays {
+        match add_relay(client, &relay.url, relay.proxy).await {
+            false => err_count += 1,
+            _ => (),
         }
-        i += 1;
     }
-    if err_count != 0 {
-        Err(Error::AddRelayFailed)
-    } else {
-        Ok(())
+    match err_count {
+        0 => Ok(()),
+        _ => Err(Error::AddRelayFailed)
+    }
+}
+
+async fn add_relay(client: &mut Client, url: &Url, proxy: Option<SocketAddr>) -> bool {
+    let options: RelayOptions = RelayOptions::new();
+    let options = options.proxy(proxy.clone());
+    match client.add_relay_with_opts(url, options).await {
+        Ok(value) => {
+            let status = if value { "successful" } else { "already added" };
+            debug!(
+                "add_relay with relay {:?} with proxy {:?} {}.",
+                url, proxy, status
+            );
+            true
+        },
+        Err(ref e) => {
+            error!(
+                "Error: add_relay() returned error. Relay {:?} not added. Reported error {:?}.",
+                url, e
+            );
+            false
+        }
     }
 }
 
@@ -1766,38 +1743,25 @@ pub(crate) async fn add_relays_from_creds(client: &mut Client, ap: &mut Args) ->
 /// Add relays from --add-relay.
 pub(crate) async fn cli_add_relay(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
     let mut err_count = 0u32;
-    let num = ap.add_relay.len();
-    let mut i = 0;
-    while i < num {
-        if is_relay_url(&ap.add_relay[i]) {
-            match client.add_relay(ap.add_relay[i].as_str(), ap.proxy).await {
-                Ok(()) => {
-                    debug!(
-                        "add_relay with relay {:?} and proxy {:?} successful.",
-                        ap.add_relay[i], ap.proxy
-                    );
-                    ap.creds
-                        .relays
-                        .push(Relay::new(ap.add_relay[i].clone(), ap.proxy));
-                }
-                Err(ref e) => {
-                    error!(
-                    "Error: add_relay() returned error. Relay {:?} not added. Reported error {:?}.",
-                    ap.add_relay[i], e
-                );
-                    err_count += 1;
-                }
-            }
-        } else {
+    let urls: Vec<&Url> = ap.add_relay.iter().filter_map(|url| match is_relay_url(url) {
+        true => Some(url),
+        false => {
+            err_count += 1;
             error!(
                 "Error: Relay {:?} is syntactically not correct. Relay not added.",
-                ap.add_relay[i],
+                url,
             );
-            err_count += 1;
+            None
         }
-        i += 1;
+    }).collect();
+
+    for url in urls {
+        match add_relay(client, url, ap.proxy).await {
+            true => ap.creds.relays.push(Relay::new(url.clone(), ap.proxy)),
+            false => err_count += 1,
+        }
     }
-    ap.creds.relays.dedup_by(|a, b| a.url == b.url);
+
     match ap.creds.save(get_credentials_actual_path(ap)) {
         Ok(()) => {
             debug!(
@@ -1813,10 +1777,10 @@ pub(crate) async fn cli_add_relay(client: &mut Client, ap: &mut Args) -> Result<
             err_count += 1;
         }
     }
-    if err_count != 0 {
-        Err(Error::AddRelayFailed)
-    } else {
-        Ok(())
+
+    match err_count {
+        0 => Ok(()),
+        _ => Err(Error::AddRelayFailed)
     }
 }
 
@@ -1889,7 +1853,7 @@ pub(crate) async fn cli_publish(client: &Client, ap: &mut Args) -> Result<(), Er
                                 "Read {n} bytes containing \"{}\\n\" from pipe stream.",
                                 trim_newline(&mut line.clone())
                             );
-                            match client.publish_text_note(&line, &[]).await {
+                            match client.publish_text_note(&line, []).await {
                                 Ok(ref event_id) => debug!(
                                     "Publish_text_note number {:?} from pipe stream sent successfully. {:?}. event_id {:?}",
                                     i, &line, event_id
@@ -1928,7 +1892,7 @@ pub(crate) async fn cli_publish(client: &Client, ap: &mut Args) -> Result<(), Er
             continue;
         }
 
-        match client.publish_text_note(&fnote, &[]).await {
+        match client.publish_text_note(&fnote, []).await {
             Ok(ref event_id) => debug!(
                 "Publish_text_note number {:?} sent successfully. {:?}, event_id {:?}",
                 i, &fnote, event_id
@@ -1946,118 +1910,6 @@ pub(crate) async fn cli_publish(client: &Client, ap: &mut Args) -> Result<(), Er
         Ok(())
     }
 }
-
-// publish_pow_text_note discontinued since nostr-sdk v0.21.
-// /// Handle the --publish_pow CLI argument
-// /// Publish a POW text note
-// pub(crate) async fn cli_publish_pow(client: &Client, ap: &mut Args) -> Result<(), Error> {
-//     let mut err_count = 0usize;
-//     let num = ap.publish_pow.len();
-//     let mut i = 0;
-//     while i < num {
-//         let note = &ap.publish_pow[i];
-//         trace!("publish: {:?}", note);
-//         if note.is_empty() {
-//             info!("Skipping empty text note.");
-//             i += 1;
-//             continue;
-//         };
-//         if note == "--" {
-//             info!("Skipping '--' text note as these are used to separate arguments.");
-//             i += 1;
-//             continue;
-//         };
-//         // - map to - (stdin pipe)
-//         // \- maps to text r'-', a 1-letter message
-//         let fnote = if note == r"-" {
-//             let mut line = String::new();
-//             if atty::is(Stream::Stdin) {
-//                 print!("Message: ");
-//                 std::io::stdout()
-//                     .flush()
-//                     .expect("error: could not flush stdout");
-//                 io::stdin().read_line(&mut line)?;
-//             } else {
-//                 io::stdin().read_to_string(&mut line)?;
-//             }
-//             line
-//         } else if note == r"_" {
-//             let mut eof = false;
-//             while !eof {
-//                 let mut line = String::new();
-//                 match io::stdin().read_line(&mut line) {
-//                     // If this function returns Ok(0), the stream has reached EOF.
-//                     Ok(n) => {
-//                         if n == 0 {
-//                             eof = true;
-//                             debug!("Reached EOF of pipe stream.");
-//                         } else {
-//                             debug!(
-//                                 "Read {n} bytes containing \"{}\\n\" from pipe stream.",
-//                                 trim_newline(&mut line.clone())
-//                             );
-//                             debug!("Be patient, hashing ...");
-//                             match client.publish_text_note(&line, &[], ap.pow_difficulty).await {
-//                                 Ok(event_id) => debug!(
-//                                     "Publish_pow_text_note number {:?} from pipe stream sent successfully. {:?}, event_id {:?}",
-//                                     i, &line, event_id
-//                                 ),
-//                                 Err(ref e) => {
-//                                     err_count += 1;
-//                                     error!(
-//                                         "Publish_pow_text_note number {:?} from pipe stream failed. {:?}",
-//                                         i, &line
-//                                     );
-//                                 }
-//                             }
-//                         }
-//                     }
-//                     Err(ref e) => {
-//                         err_count += 1;
-//                         error!("Error: reading from pipe stream reported {}", e);
-//                     }
-//                 }
-//             }
-//             "".to_owned()
-//         } else if note == r"\-" {
-//             "-".to_string()
-//         } else if note == r"\_" {
-//             "_".to_string()
-//         } else if note == r"\-\-" {
-//             "--".to_string()
-//         } else if note == r"\-\-\-" {
-//             "---".to_string()
-//         } else {
-//             note.to_string()
-//         };
-//         if fnote.is_empty() {
-//             info!("Skipping empty text note.");
-//             i += 1;
-//             continue;
-//         }
-//
-//         debug!("Be patient, hashing ...");
-//         match client
-//             .publish_pow_text_note(&fnote, &[], ap.pow_difficulty)
-//             .await
-//         {
-//             Ok(ref event_id) => debug!(
-//                 "Publish_pow_text_note number {:?} sent successfully. {:?}, event_id {:?}",
-//                 i, &fnote, event_id
-//             ),
-//             Err(ref e) => {
-//                 err_count += 1;
-//                 error!("Publish_pow_text_note number {:?} failed. {:?}", i, &fnote);
-//             }
-//         }
-//         i += 1;
-//     }
-//     if err_count != 0 {
-//         Err(Error::PublishPowFailed)
-//     } else {
-//         Ok(())
-//     }
-// }
 
 /// Publish DMs.
 pub(crate) async fn send_dms(
@@ -2111,6 +1963,7 @@ pub(crate) async fn send_dms(
                                 "Read {n} bytes containing \"{}\\n\" from pipe stream.",
                                 trim_newline(&mut line.clone())
                             );
+                            // Unsecure! Use `send_private_msg` instead.
                             match client.send_direct_msg(recipient.public_key(), &line, None).await {
                                 Ok(event_id) => debug!(
                                     "send_direct_msg number {:?} from pipe stream sent successfully. {:?}, sent to {:?}, event_id {:?}",
@@ -2150,6 +2003,7 @@ pub(crate) async fn send_dms(
             continue;
         }
 
+        // Unsecure! Use `send_private_msg` instead.
         match client
             .send_direct_msg(recipient.public_key(), &fnote, None)
             .await
@@ -2204,11 +2058,42 @@ pub(crate) async fn cli_dm(client: &Client, ap: &mut Args) -> Result<(), Error> 
     }
 }
 
+async fn send_channel_message(
+    client: &Client,
+    channel_id: &PublicKey,
+    relay_url: &Url,
+    line: &str,
+    annotation: &str
+) -> bool {
+    let tags: Vec<Tag> = vec![]; // TODO: add relay_url tag
+    let event_id = EventId::new(&channel_id.clone(), &Timestamp::now(), &Kind::ChannelMessage, &tags, line);
+    //created_at: &Timestamp,
+    //kind: &Kind,
+    //tags: &[Tag],
+    //content: &str,
+    match client.send_channel_msg(event_id, relay_url.clone(), line).await {
+        Ok(ref event_id) => {
+            debug!(
+                "send_channel_msg number {} sent successfully. {:?}, sent to {:?}, event_id is {:?}",
+                annotation, line, &channel_id, event_id
+            );
+            true
+        },
+        Err(ref e) => {
+            error!(
+                "send_channel_msg number {} failed. {:?}, sent to {:?}, error is {:?}",
+                annotation, line, &channel_id, e
+            );
+            false
+        }
+    }
+}
+
 /// Send messages to one channel.
 pub(crate) async fn send_channel_messages(
     client: &Client,
     notes: &[String], // msgs
-    channel_id: &ChannelId,
+    channel_id: PublicKey,
     relay_url: Url,
 ) -> Result<(), Error> {
     trace!("send_channel_messages {:?} {:?}.", notes, channel_id);
@@ -2217,7 +2102,7 @@ pub(crate) async fn send_channel_messages(
     let mut i = 0;
     while i < num {
         let note = &notes[i];
-        trace!("send_channel_message: {:?}", note);
+        trace!("send_channel_messages: {:?}", note);
         if note.is_empty() {
             info!("Skipping empty text note.");
             i += 1;
@@ -2257,18 +2142,15 @@ pub(crate) async fn send_channel_messages(
                                 "Read {n} bytes containing \"{}\\n\" from pipe stream.",
                                 trim_newline(&mut line.clone())
                             );
-                            match client.send_channel_msg(channel_id.clone(), relay_url.clone(), &line).await {
-                                Ok(ref event_id) => debug!(
-                                    "send_channel_msg number {:?} from pipe stream sent successfully. {:?}, sent to {:?}, event_id is {:?}",
-                                    i, &line, channel_id, event_id
-                                ),
-                                Err(ref e) => {
-                                    err_count += 1;
-                                    error!(
-                                        "send_channel_msg number {:?} from pipe stream failed. {:?}, sent to {:?}, error is {:?}",
-                                        i, &line, &channel_id, e
-                                    );
-                                }
+                            match send_channel_message(
+                                client,
+                                &channel_id,
+                                &relay_url,
+                                &line,
+                                &format!("{} from pipe stream", i),
+                            ).await {
+                                false => err_count += 1,
+                                _ => (),
                             }
                         }
                     }
@@ -2296,21 +2178,15 @@ pub(crate) async fn send_channel_messages(
             continue;
         }
 
-        match client
-            .send_channel_msg(channel_id.clone(), relay_url.clone(), &fnote)
-            .await
-        {
-            Ok(event_id) => debug!(
-                "send_channel_msg message number {:?} sent successfully. {:?}, sent to {:?}, event_id {:?}.",
-                i, &fnote, channel_id, event_id
-            ),
-            Err(ref e) => {
-                err_count += 1;
-                error!(
-                    "send_channel_msg message number {:?} failed. {:?}, sent to {:?}.",
-                    i, &fnote, channel_id
-                );
-            }
+        match send_channel_message(
+            client,
+            &channel_id,
+            &relay_url,
+            &fnote,
+            &format!("{}", i),
+        ).await {
+            false => err_count += 1,
+            _ => (),
         }
         i += 1;
     }
@@ -2329,22 +2205,22 @@ pub(crate) async fn cli_send_channel_message(client: &Client, ap: &mut Args) -> 
         return Err(Error::MissingCliParameter);
     }
     // todo: check if hash is valid, doable? check documentation
-    match Hash::from_str(&ap.send_channel_message[0]) {
-        Ok(hash) => {
+    match PublicKey::from_str(&ap.send_channel_message[0]) {
+        Ok(channel_id) => {
             let notes = &ap.send_channel_message[1..];
             let relay: Url;
             if !ap.relay.is_empty() {
+                // todo: pass the vector of relays, not just one
                 relay = ap.relay[0].clone();
             } else {
                 relay = ap.creds.relays[0].clone().url;
             }
             // todo: using empty relay-vector, should it be set?
-            let channel_id: ChannelId = ChannelId::new(hash, Vec::new());
-            send_channel_messages(client, notes, &channel_id, relay).await
+            send_channel_messages(client, notes, channel_id, relay).await
         }
         Err(ref e) => {
             error!(
-                "Error: Not a valid hash (channel id). Cannot send this channel message. Aborting. Hash {:?}, 1st Msg {:?} ",
+                "Error: Not a valid hash (channel id). Cannot send this channel message. Aborting. hash {:?}, 1st Msg {:?} ",
                 ap.send_channel_message[0],
                 ap.send_channel_message[1]
             );
@@ -2354,7 +2230,7 @@ pub(crate) async fn cli_send_channel_message(client: &Client, ap: &mut Args) -> 
 }
 
 /// Is key in subscribed_authors list?
-pub(crate) fn is_subscribed_author(ap: &Args, pkey: &XOnlyPublicKey) -> bool {
+pub(crate) fn is_subscribed_author(ap: &Args, pkey: &PublicKey) -> bool {
     ap.creds.subscribed_authors.contains(pkey)
 }
 
@@ -2370,14 +2246,14 @@ pub(crate) fn get_contact_by_alias(ap: &Args, alias: &str) -> Option<Contact> {
 
 /// Get contact for given pubkey.
 /// Returns None if pubkey does not exist in contact list.
-pub(crate) fn get_contact_by_key(ap: &Args, pkey: XOnlyPublicKey) -> Option<Contact> {
-    ap.creds.contacts.iter().find(|s| s.pk == pkey).cloned()
+pub(crate) fn get_contact_by_key(ap: &Args, pkey: PublicKey) -> Option<Contact> {
+    ap.creds.contacts.iter().find(|s| s.public_key == pkey).cloned()
 }
 
 /// Get contact alias for given pubkey, or if not in contacts return given pubkey.
 /// Returns alias if contact with this pubkey exists.
 /// Returns input pubkey if no contact with this pubkey exists.
-pub(crate) fn get_contact_alias_or_keystr_by_key(ap: &Args, pkey: XOnlyPublicKey) -> String {
+pub(crate) fn get_contact_alias_or_keystr_by_key(ap: &Args, pkey: PublicKey) -> String {
     match get_contact_by_key(ap, pkey) {
         Some(c) => match c.alias {
             Some(a) => a,
@@ -2390,18 +2266,18 @@ pub(crate) fn get_contact_alias_or_keystr_by_key(ap: &Args, pkey: XOnlyPublicKey
 /// Get contact alias for given pubkey, or if not in contacts return None.
 /// Returns Some(alias) if contact with this pubkey exists.
 /// Returns None if no contact with this pubkey exists.
-pub(crate) fn get_contact_alias_by_key(ap: &Args, pkey: XOnlyPublicKey) -> Option<String> {
+pub(crate) fn get_contact_alias_by_key(ap: &Args, pkey: PublicKey) -> Option<String> {
     match get_contact_by_key(ap, pkey) {
         Some(c) => c.alias,
         None => None,
     }
 }
 
-/// Get contact alias for given pubkey string (string of XOnlyPublicKey), or if not in contacts return given pubkey.
+/// Get contact alias for given pubkey string (string of PublicKey), or if not in contacts return given pubkey.
 /// Returns alias if contact with this pubkey exists.
 /// Returns input pubkey if no contact with this pubkey exists.
 pub(crate) fn get_contact_alias_or_keystr_by_keystr(ap: &Args, pkeystr: &str) -> String {
-    match XOnlyPublicKey::from_str(pkeystr) {
+    match PublicKey::from_str(pkeystr) {
         Ok(pkey) => match get_contact_by_key(ap, pkey) {
             Some(c) => match c.alias {
                 Some(a) => a,
@@ -2413,11 +2289,11 @@ pub(crate) fn get_contact_alias_or_keystr_by_keystr(ap: &Args, pkeystr: &str) ->
     }
 }
 
-/// Get contact alias for given pubkey string (string of XOnlyPublicKey), or if not in contacts return None.
+/// Get contact alias for given pubkey string (string of PublicKey), or if not in contacts return None.
 /// Returns Some(alias) if contact with this pubkey exists.
 /// Returns None if no contact with this pubkey exists.
 pub(crate) fn get_contact_alias_by_keystr(ap: &Args, pkeystr: &str) -> Option<String> {
-    match XOnlyPublicKey::from_str(pkeystr) {
+    match PublicKey::from_str(pkeystr) {
         Ok(pkey) => match get_contact_by_key(ap, pkey) {
             Some(c) => c.alias,
             None => None,
@@ -2503,19 +2379,19 @@ pub(crate) async fn cli_remove_contact(client: &Client, ap: &mut Args) -> Result
     Ok(())
 }
 
-/// Convert npub1... Bech32 key or Hex key or contact alias into a XOnlyPublicKey
+/// Convert npub1... Bech32 key or Hex key or contact alias into a PublicKey
 /// Returns Error if neither valid Bech32, nor Hex key, nor contact alias.
-pub(crate) fn cstr_to_pubkey(ap: &Args, s: &str) -> Result<XOnlyPublicKey, Error> {
+pub(crate) fn cstr_to_pubkey(ap: &Args, s: &str) -> Result<PublicKey, Error> {
     match get_contact_by_alias(ap, s) {
-        Some(c) => Ok(c.pk),
+        Some(c) => Ok(c.public_key),
         None => str_to_pubkey(s),
     }
 }
 
-/// Convert npub1... Bech32 key or Hex key into a XOnlyPublicKey
+/// Convert npub1... Bech32 key or Hex key into a PublicKey
 /// Returns Error if neither valid Bech32 nor Hex key.
-pub(crate) fn str_to_pubkey(s: &str) -> Result<XOnlyPublicKey, Error> {
-    match XOnlyPublicKey::from_bech32(s) {
+pub(crate) fn str_to_pubkey(s: &str) -> Result<PublicKey, Error> {
+    match PublicKey::from_bech32(s) {
         Ok(pkey) => {
             debug!(
                 "Valid key in Bech32 format: Npub {:?}, Hex {:?}",
@@ -2524,7 +2400,7 @@ pub(crate) fn str_to_pubkey(s: &str) -> Result<XOnlyPublicKey, Error> {
             );
             return Ok(pkey);
         }
-        Err(ref e) => match XOnlyPublicKey::from_str(s) {
+        Err(ref e) => match PublicKey::from_str(s) {
             Ok(pkey) => {
                 debug!(
                     "Valid key in Hex format: Hex {:?}, Npub {:?}",
@@ -2545,7 +2421,7 @@ pub(crate) fn str_to_pubkey(s: &str) -> Result<XOnlyPublicKey, Error> {
 /// s ... input, npub ... output, hex ... output.
 /// Returns Error if neither valid Bech32 nor Hex key.
 pub(crate) fn str_to_pubkeys(s: &str) -> Result<(String, String), Error> {
-    match XOnlyPublicKey::from_bech32(s) {
+    match PublicKey::from_bech32(s) {
         Ok(pkey) => {
             debug!(
                 "Valid key in Bech32 format: Npub {:?}, Hex {:?}",
@@ -2557,7 +2433,7 @@ pub(crate) fn str_to_pubkeys(s: &str) -> Result<(String, String), Error> {
             let hex = pkey.to_string(); // pkey.to_bech32().unwrap();
             return Ok((npub, hex));
         }
-        Err(ref e) => match XOnlyPublicKey::from_str(s) {
+        Err(ref e) => match PublicKey::from_str(s) {
             Ok(pkey) => {
                 debug!(
                     "Valid key in Hex format: Hex {:?}, Npub {:?}",
@@ -2661,83 +2537,6 @@ pub(crate) fn cli_hex_to_npub(ap: &Args) -> Result<(), Error> {
     }
     if err_count != 0 {
         Err(Error::ConversionFailed)
-    } else {
-        Ok(())
-    }
-}
-
-/// Handle the --cli_get_pubkey_entity CLI argument
-pub(crate) async fn cli_get_pubkey_entity(client: &Client, ap: &mut Args) -> Result<(), Error> {
-    let mut err_count = 0usize;
-    let num = ap.get_pubkey_entity.len();
-    let mut i = 0;
-    while i < num {
-        match str_to_pubkey(&ap.get_pubkey_entity[i]) {
-            Ok(pkey) => {
-                debug!(
-                    "Valid key. Key {:?}, Hex: {:?}.",
-                    &ap.subscribe_pubkey[i],
-                    pkey.to_string()
-                );
-                // no timeout
-                match client.get_entity_of(pkey.to_string(), None).await {
-                    Ok(entity) => {
-                        debug!(
-                            "Valid key. Key {:?}, Hex: {:?}, Entity: {:?}",
-                            &ap.subscribe_pubkey[i],
-                            pkey.to_string(),
-                            entity
-                        );
-                        print_json(
-                            &json!({
-                                "hex": pkey.to_string(),
-                                "entity": entity, // prints as text like "Channel"
-                            }),
-                            ap.output,
-                            0,
-                            "",
-                        );
-                    }
-                    Err(ref e) => {
-                        debug!(
-                            "Valid key. Key {:?}, Hex: {:?}, Entity error: {:?}",
-                            &ap.subscribe_pubkey[i],
-                            pkey.to_string(),
-                            e
-                        );
-                        print_json(
-                            &json!({
-                                "hex": pkey.to_string(),
-                                "error": format!("{:?}",e),
-                            }),
-                            ap.output,
-                            0,
-                            "",
-                        );
-                    }
-                }
-            }
-            Err(ref e) => {
-                error!(
-                    "Error: Invalid key {:?}. No attempt made to determine entity.",
-                    &ap.get_pubkey_entity[i]
-                );
-                print_json(
-                    &json!({
-                        "key": ap.get_pubkey_entity[i],
-                        "error": "invalid key",
-                    }),
-                    ap.output,
-                    0,
-                    "",
-                );
-                err_count += 1;
-            }
-        }
-        i += 1;
-    }
-    if err_count != 0 {
-        Err(Error::GetEntityFailed)
     } else {
         Ok(())
     }
@@ -2873,11 +2672,11 @@ pub(crate) async fn cli_subscribe_channel(client: &mut Client, ap: &mut Args) ->
     let mut hashs = Vec::new();
     let mut i = 0;
     while i < num {
-        match Hash::from_str(&ap.subscribe_channel[i]) {
+        match PublicKey::from_str(&ap.subscribe_channel[i]) {
             Ok(hash) => {
                 hashs.push(hash);
                 debug!(
-                    "Valid key added to subscription filter. Key {:?}, Hash: {:?}.",
+                    "Valid key added to subscription filter. Key {:?}, hash: {:?}.",
                     &ap.subscribe_channel[i],
                     hash.to_string()
                 );
@@ -2907,11 +2706,11 @@ pub(crate) async fn cli_unsubscribe_channel(client: &Client, ap: &mut Args) -> R
     let num = ap.unsubscribe_channel.len();
     let mut i = 0;
     while i < num {
-        match Hash::from_str(&ap.unsubscribe_channel[i]) {
+        match PublicKey::from_str(&ap.unsubscribe_channel[i]) {
             Ok(hash) => {
                 ap.creds.subscribed_channels.retain(|x| x != &hash);
                 debug!(
-                    "Valid key removed from subscription filter. Key {:?}, Hash: {:?}.",
+                    "Valid key removed from subscription filter. Key {:?}, hash: {:?}.",
                     &ap.unsubscribe_channel[i],
                     hash.to_string()
                 );
@@ -3013,12 +2812,6 @@ async fn main() -> Result<(), Error> {
     eprintln!("At the very least give it a star on Github. ");
     eprintln!("Star and make PRs at: https://github.com/8go/nostr-commander-rs ");
     eprintln!("");
-    eprintln!("Incompatible changes between version 0.0.9 and 0.0.10.");
-    eprintln!("Incompatible changes between version 0.0.10 and 0.1.0.");
-    eprintln!("Please delete user and create new user or edit your");
-    eprintln!("credentials file and make it look similar to the example");
-    eprintln!("given in the README.md file.");
-    eprintln!("");
 
     // handle log level and debug options
     let env_org_rust_log = env::var("RUST_LOG").unwrap_or_default().to_uppercase();
@@ -3106,7 +2899,7 @@ async fn main() -> Result<(), Error> {
 
     debug!("Welcome to nostr-commander-rs");
 
-    let my_keys = Keys::from_sk_str(&ap.creds.secret_key_bech32)?;
+    let my_keys = Keys::parse(&ap.creds.secret_key_bech32)?;
 
     // Show public key
     if ap.show_public_key {
@@ -3211,7 +3004,6 @@ async fn main() -> Result<(), Error> {
         || !ap.subscribe_pubkey.is_empty()
         || !ap.subscribe_author.is_empty()
         || !ap.subscribe_channel.is_empty()
-        || !ap.get_pubkey_entity.is_empty()
     {
         // design decision: avoid connect_...()  call if no relay action is needed and everything can be done locally.
         // design decision: avoid connect...() if no client is needed.
@@ -3281,18 +3073,6 @@ async fn main() -> Result<(), Error> {
     }
     // ap.creds.save(get_credentials_actual_path(&ap))?; // do it later
 
-    // Get pubkey entity
-    if !ap.get_pubkey_entity.is_empty() {
-        match crate::cli_get_pubkey_entity(&client, &mut ap).await {
-            Ok(()) => {
-                info!("get_pubkey_entity successful.");
-            }
-            Err(ref e) => {
-                error!("get_pubkey_entity failed. Reported error is: {:?}", e);
-            }
-        }
-    }
-
     trace!("checking if something needs to be published.");
     // Publish a text note
     if !ap.publish.is_empty() {
@@ -3352,27 +3132,8 @@ async fn main() -> Result<(), Error> {
         }
     }
     if !ap.creds.subscribed_pubkeys.is_empty() && ap.listen {
-        let mut ksf: Filter;
-        ksf = Filter::new().pubkeys(ap.creds.subscribed_pubkeys.clone());
-        if ap.limit_number != 0 {
-            ksf = ksf.limit(ap.limit_number);
-        }
-        if ap.limit_days != 0 {
-            ksf = ksf.since(Timestamp::now() - Duration::new(ap.limit_days * 24 * 60 * 60, 0));
-        }
-        if ap.limit_hours != 0 {
-            ksf = ksf.since(Timestamp::now() - Duration::new(ap.limit_hours * 60 * 60, 0));
-        }
-        if ap.limit_future_days != 0 {
-            ksf =
-                ksf.until(Timestamp::now() + Duration::new(ap.limit_future_days * 24 * 60 * 60, 0));
-        }
-        if ap.limit_future_hours != 0 {
-            ksf = ksf.until(Timestamp::now() + Duration::new(ap.limit_future_hours * 60 * 60, 0));
-        }
-        info!("subscribe to keys initiated.");
-        client.subscribe(vec![ksf]).await;
-        info!("subscribe to keys successful.");
+        let mut filter = Filter::new().pubkeys(ap.creds.subscribed_pubkeys.clone());
+        subscribe_to_filter(&client, &ap, filter, "keys").await;
     }
     // Subscribe authors
     if !ap.subscribe_author.is_empty() {
@@ -3386,31 +3147,8 @@ async fn main() -> Result<(), Error> {
         }
     }
     if !ap.creds.subscribed_authors.is_empty() && ap.listen {
-        let mut asf: Filter;
-        asf = Filter::new();
-        for author in &ap.creds.subscribed_authors {
-            debug!("adding author {:?} to filter.", author);
-            asf = asf.author(author.to_string());
-        }
-        if ap.limit_number != 0 {
-            asf = asf.limit(ap.limit_number);
-        }
-        if ap.limit_days != 0 {
-            asf = asf.since(Timestamp::now() - Duration::new(ap.limit_days * 24 * 60 * 60, 0));
-        }
-        if ap.limit_hours != 0 {
-            asf = asf.since(Timestamp::now() - Duration::new(ap.limit_hours * 60 * 60, 0));
-        }
-        if ap.limit_future_days != 0 {
-            asf =
-                asf.until(Timestamp::now() + Duration::new(ap.limit_future_days * 24 * 60 * 60, 0));
-        }
-        if ap.limit_future_hours != 0 {
-            asf = asf.until(Timestamp::now() + Duration::new(ap.limit_future_hours * 60 * 60, 0));
-        }
-        info!("subscribe to authors initiated.");
-        client.subscribe(vec![asf]).await;
-        info!("subscribe to authors successful.");
+        let mut filter = Filter::new().authors(ap.creds.subscribed_authors.clone());
+        subscribe_to_filter(&client, &ap, filter, "authors").await;
     }
     // Subscribe channels
     if !ap.subscribe_channel.is_empty() {
@@ -3435,32 +3173,8 @@ async fn main() -> Result<(), Error> {
         }
     }
     if !ap.creds.subscribed_channels.is_empty() && ap.listen {
-        let mut csf: Filter;
-        let mut ev_vec: Vec<EventId> = Vec::new();
-        for sc in &mut ap.creds.subscribed_channels {
-            ev_vec.push(EventId::from(*sc));
-        }
-
-        csf = Filter::new().events(ev_vec);
-        if ap.limit_number != 0 {
-            csf = csf.limit(ap.limit_number);
-        }
-        if ap.limit_days != 0 {
-            csf = csf.since(Timestamp::now() - Duration::new(ap.limit_days * 24 * 60 * 60, 0));
-        }
-        if ap.limit_hours != 0 {
-            csf = csf.since(Timestamp::now() - Duration::new(ap.limit_hours * 60 * 60, 0));
-        }
-        if ap.limit_future_days != 0 {
-            csf =
-                csf.until(Timestamp::now() + Duration::new(ap.limit_future_days * 24 * 60 * 60, 0));
-        }
-        if ap.limit_future_hours != 0 {
-            csf = csf.until(Timestamp::now() + Duration::new(ap.limit_future_hours * 60 * 60, 0));
-        }
-        info!("subscribe to channels initiated.");
-        client.subscribe(vec![csf]).await;
-        info!("subscribe to channels successful.");
+        let mut filter = Filter::new().pubkeys(ap.creds.subscribed_channels.clone());
+        subscribe_to_filter(&client, &ap, filter, "channels").await;
     }
     ap.creds.save(get_credentials_actual_path(&ap))?;
 
@@ -3493,27 +3207,29 @@ async fn main() -> Result<(), Error> {
             .handle_notifications(|notification| async {
                 debug!("Notification: {:?}", notification);
                 match notification {
-                    Stop => {
-                        debug!("Stop: stopping");
-                        // todo: zzz stopp
-                    }
-                    Shutdown => {
+                    RelayPoolNotification::Shutdown => {
                         debug!("Shutdown: shutting down");
                         // todo: zzz shutdown
                     }
-                    RelayStatus { url, status } => {
-                        debug!("Event-RelayStatus: url {:?}, relaystatus {:?}", url, status);
+                    RelayStatus { relay_url, status } => {
+                        debug!("Event-RelayStatus: url {:?}, relaystatus {:?}", relay_url, status);
                     }
-                    Event(url, ev) => {
-                        debug!("Event-Event: url {:?}, content {:?}, kind {:?}", url, ev.content, ev.kind);
+                    Event { relay_url, subscription_id, event } => {
+                        debug!("Event-Event: url {:?}, content {:?}, kind {:?}", relay_url, event.content, event.kind);
                     }
-                    Message(url, msg) => {
-                        // debug!("Message: {:?}", msg);
-                        match msg {
+                    Message {relay_url, message } => {
+                        // debug!("Message: {:?}", message);
+                        match message {
                             RelayMessage::Ok {event_id, status, message } => {
                                 // Notification: ReceivedMessage(Ok { event_id: 123, status: true, message: "" })
                                 // confirmation of notice having been relayed
-                                info!("Message-OK: Notice, DM or message was relayed. Url is {:?}, Event id is {:?}. Status is {:?} and message is {:?}. You can investigate this event by looking it up on https://nostr.com/e/{}", url, event_id, status, message, event_id.to_string());
+                                info!(concat!(
+                                        r#"Message-OK: Notice, DM or message was relayed. Url is {:?}"#,
+                                        r#" Event id is {:?}. Status is {:?} and message is {:?}. You"#,
+                                        r#" can investigate this event by looking it up on https://nostr.com/e/{}"#
+                                      ),
+                                      relay_url, event_id, status, message, event_id.to_string()
+                                );
                                 print_json(
                                     &json!({"event_type": "RelayMessage::Ok",
                                         "event_type_meaning": "Notice, DM or message was relayed successfully.",
@@ -3535,7 +3251,7 @@ async fn main() -> Result<(), Error> {
                                 let first = true;
                                 for t in &event.tags {
                                     match t.kind() {
-                                        TagKind::P => {
+                                        TagKind::SingleLetter(P) => {
                                             trace!("tag vector: {:?}", t.as_vec());
                                             //match t.content() {
                                             //    Some(c) => {
@@ -3552,7 +3268,7 @@ async fn main() -> Result<(), Error> {
                                             //    None => ()
                                             //}
                                         },
-                                        TagKind::E => info!("E message received. Not implemented."),  // todo!(),
+                                        TagKind::SingleLetter(E) => info!("E message received. Not implemented."),  // todo!(),
                                         TagKind::Nonce => info!("Nonce message received. Not implemented."),  // todo!(),
                                         TagKind::Delegation => info!("Delegation message received. Not implemented."),  // todo!(),
                                         TagKind::ContentWarning => info!("ContentWarning message received. Not implemented."),  // todo!(),
@@ -3613,14 +3329,23 @@ async fn main() -> Result<(), Error> {
                                 }
                             },
                             RelayMessage::EndOfStoredEvents(subscription_id) =>  {
-                                        debug!("Received Message-Event EndOfStoredEvents");
-                                    },
+                                debug!("Received Message-Event EndOfStoredEvents");
+                            },
                             RelayMessage::Auth { challenge } =>  {
-                                        debug!("Received Message-Event Auth");
-                                    },
+                                debug!("Received Message-Event Auth");
+                            },
                             RelayMessage::Count { subscription_id, count } =>  {
-                                        debug!("Received Message-Event Count {:?}", count);
-                                    },
+                                debug!("Received Message-Event Count {:?}", count);
+                            },
+                            RelayMessage::Closed { subscription_id, message } => {
+                                debug!("Received Message-Event Closed {:?}", message);
+                            },
+                            RelayMessage::NegMsg { subscription_id, message } => {
+                                debug!("Received Message-Event NegMsg {:?}", message);
+                            },
+                            RelayMessage::NegErr { subscription_id, code } => {
+                                debug!("Received Message-Event NegErr {:?}", code);
+                            },
                         }
                     }
                 }
@@ -3639,6 +3364,33 @@ async fn main() -> Result<(), Error> {
 
     debug!("Good bye");
     Ok(())
+}
+
+async fn subscribe_to_filter(
+    client: &Client,
+    ap: &Args,
+    mut filter: Filter,
+    filter_name: &str
+) {
+    if ap.limit_number != 0 {
+        filter = filter.limit(ap.limit_number);
+    }
+    if ap.limit_days != 0 {
+        filter = filter.since(Timestamp::now() - Duration::new(ap.limit_days * 24 * 60 * 60, 0));
+    }
+    if ap.limit_hours != 0 {
+        filter = filter.since(Timestamp::now() - Duration::new(ap.limit_hours * 60 * 60, 0));
+    }
+    if ap.limit_future_days != 0 {
+        filter =
+            filter.until(Timestamp::now() + Duration::new(ap.limit_future_days * 24 * 60 * 60, 0));
+    }
+    if ap.limit_future_hours != 0 {
+        filter = filter.until(Timestamp::now() + Duration::new(ap.limit_future_hours * 60 * 60, 0));
+    }
+    info!("subscribe to {filter_name} initiated.");
+    client.subscribe(vec![filter], None).await;
+    info!("subscribe to {filter_name} successful.");
 }
 
 /// Future test cases will be put here

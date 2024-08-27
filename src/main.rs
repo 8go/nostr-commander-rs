@@ -23,7 +23,8 @@
 use atty::Stream;
 use clap::{ColorChoice, CommandFactory, Parser, ValueEnum};
 use directories::ProjectDirs;
-use chrono::Utc;
+use chrono::prelude::DateTime;
+use chrono::{Utc, Local};
 use core::cmp::Ordering;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -36,7 +37,7 @@ use std::net::SocketAddr;
 use std::panic;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH, Duration};
 use thiserror::Error;
 use tracing::{debug, enabled, error, info, trace, warn, Level};
 use tracing_subscriber;
@@ -46,6 +47,7 @@ use nostr_sdk::prelude::*;
 use nostr_sdk::{
    RelayPoolNotification::{Event, Message, RelayStatus},
 };
+use time::Timestamp;
 
 // /// import nostr-sdk Client related code of general kind: create_user, delete_user, etc // todo
 // mod client; // todo
@@ -2067,10 +2069,6 @@ async fn send_channel_message(
 ) -> bool {
     let tags: Vec<Tag> = vec![]; // TODO: add relay_url tag
     let event_id = EventId::new(&channel_id.clone(), &Timestamp::now(), &Kind::ChannelMessage, &tags, line);
-    //created_at: &Timestamp,
-    //kind: &Kind,
-    //tags: &[Tag],
-    //content: &str,
     match client.send_channel_msg(event_id, relay_url.clone(), line).await {
         Ok(ref event_id) => {
             debug!(
@@ -2801,6 +2799,19 @@ pub(crate) fn cli_whoami(ap: &Args) -> Result<(), Error> {
     Ok(())
 }
 
+// todo: make this a trait
+fn date_to_string() -> String {
+    // Creates a new SystemTime from the specified number of whole seconds
+    let d = UNIX_EPOCH + Duration::from_secs(1719238711);
+    // Create DateTime from SystemTime
+    let datetime = DateTime::<Local>::from(d);
+    // Formats the combined date and time with the specified format string.
+    let timestamp_str = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
+    println!{"{}", timestamp_str};
+    timestamp_str
+}
+
+
 /// We need your code contributions! Please add features and make PRs! :pray: :clap:
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -3132,7 +3143,7 @@ async fn main() -> Result<(), Error> {
         }
     }
     if !ap.creds.subscribed_pubkeys.is_empty() && ap.listen {
-        let mut filter = Filter::new().pubkeys(ap.creds.subscribed_pubkeys.clone());
+        let filter = Filter::new().pubkeys(ap.creds.subscribed_pubkeys.clone());
         subscribe_to_filter(&client, &ap, filter, "keys").await;
     }
     // Subscribe authors
@@ -3147,7 +3158,7 @@ async fn main() -> Result<(), Error> {
         }
     }
     if !ap.creds.subscribed_authors.is_empty() && ap.listen {
-        let mut filter = Filter::new().authors(ap.creds.subscribed_authors.clone());
+        let filter = Filter::new().authors(ap.creds.subscribed_authors.clone());
         subscribe_to_filter(&client, &ap, filter, "authors").await;
     }
     // Subscribe channels
@@ -3173,7 +3184,7 @@ async fn main() -> Result<(), Error> {
         }
     }
     if !ap.creds.subscribed_channels.is_empty() && ap.listen {
-        let mut filter = Filter::new().pubkeys(ap.creds.subscribed_channels.clone());
+        let filter = Filter::new().pubkeys(ap.creds.subscribed_channels.clone());
         subscribe_to_filter(&client, &ap, filter, "channels").await;
     }
     ap.creds.save(get_credentials_actual_path(&ap))?;
@@ -3203,159 +3214,28 @@ async fn main() -> Result<(), Error> {
             );
         }
         // Handle notifications
-        match client
-            .handle_notifications(|notification| async {
-                debug!("Notification: {:?}", notification);
-                match notification {
-                    RelayPoolNotification::Shutdown => {
-                        debug!("Shutdown: shutting down");
-                        // todo: zzz shutdown
-                    }
-                    RelayStatus { relay_url, status } => {
-                        debug!("Event-RelayStatus: url {:?}, relaystatus {:?}", relay_url, status);
-                    }
-                    Event { relay_url, subscription_id, event } => {
-                        debug!("Event-Event: url {:?}, content {:?}, kind {:?}", relay_url, event.content, event.kind);
-                    }
-                    Message {relay_url, message } => {
-                        // debug!("Message: {:?}", message);
-                        match message {
-                            RelayMessage::Ok {event_id, status, message } => {
-                                // Notification: ReceivedMessage(Ok { event_id: 123, status: true, message: "" })
-                                // confirmation of notice having been relayed
-                                info!(concat!(
-                                        r#"Message-OK: Notice, DM or message was relayed. Url is {:?}"#,
-                                        r#" Event id is {:?}. Status is {:?} and message is {:?}. You"#,
-                                        r#" can investigate this event by looking it up on https://nostr.com/e/{}"#
-                                      ),
-                                      relay_url, event_id, status, message, event_id.to_string()
-                                );
-                                print_json(
-                                    &json!({"event_type": "RelayMessage::Ok",
-                                        "event_type_meaning": "Notice, DM or message was relayed successfully.",
-                                        "event_id": event_id,
-                                        "status": status,
-                                        "message": message,
-                                        "event_url": "https://nostr.com/e/".to_string() + &event_id.to_string(),
-                                        "event_url_meaning": "You can investigate this event by looking up the event URL.",
-                                    }) ,
-                                    ap.output,0,""
-                                );
-                            },
-                            RelayMessage::Notice { message } => {
-                                debug!("Message-Notice: {:?}", message);
-                            }
-                            RelayMessage::Event {event, subscription_id}=> {
-                                // kind: Base(ChannelMessage) and Base(TextNote) and Base(Reaction)
-                                let mut tags = "".to_owned();
-                                let first = true;
-                                for t in &event.tags {
-                                    match t.kind() {
-                                        TagKind::SingleLetter(P) => {
-                                            trace!("tag vector: {:?}", t.as_vec());
-                                            //match t.content() {
-                                            //    Some(c) => {
-                                            //        trace!("tag: {:?}", get_contact_alias_or_keystr_by_keystr(&ap, c));
-                                            //        match get_contact_alias_by_keystr(&ap, c) {
-                                            //            Some(a) => {
-                                            //                if !first { tags += ", "; };
-                                            //                tags += &a;
-                                            //                first = false;
-                                            //                },
-                                            //            _ => ()
-                                            //        }
-                                            //    }
-                                            //    None => ()
-                                            //}
-                                        },
-                                        TagKind::SingleLetter(E) => info!("E message received. Not implemented."),  // todo!(),
-                                        TagKind::Nonce => info!("Nonce message received. Not implemented."),  // todo!(),
-                                        TagKind::Delegation => info!("Delegation message received. Not implemented."),  // todo!(),
-                                        TagKind::ContentWarning => info!("ContentWarning message received. Not implemented."),  // todo!(),
-                                        TagKind::Custom(_) => info!("Custom message received. Not implemented."),  // todo!(),
-                                        _ => info!("Other message received. Not implemented."),  // todo!(),
-                                    }
-                                }
-                                trace!("Message-Event: content {:?}, kind {:?}, from pubkey {:?}, with tags {:?}", event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey), event.tags);
-                                let mut key_author = "key";
-                                if is_subscribed_author(&ap, &event.pubkey) {
-                                            key_author = "author";
-                                            tags = get_contact_alias_or_keystr_by_key(&ap, event.pubkey);
-                                        };
-                                match event.kind {
-                                    Kind::ContactList => {
-                                        debug!("Received Message-Event ContactList");
-                                    },
-                                    Kind::Reaction => {
-                                        debug!("Received Message-Event Reaction: content {:?}", event.content);
-                                    },
-                                    Kind::TextNote => {
-                                        info!("Subscription by {} ({}): content {:?}, kind {:?}, from pubkey {:?}", key_author, tags, event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey));
-                                        print_json(
-                                            &json!({
-                                                "event_type": "RelayMessage::Event",
-                                                "event_type_meaning": "Message was received because of subscription.",
-                                                "subscribed_by": key_author,
-                                                "author": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
-                                                "content": event.content,
-                                                "kind": event.kind, // writes integer like '1'
-                                                "kind_text": format!("{:?}",event.kind), // writes text like "Base(TextNote)"
-                                                "from_alias": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
-                                                "from_pubkey": event.pubkey,
-                                                "tags": tags
-                                            }) ,
-                                            ap.output,0,""
-                                        );
-                                    },
-                                    Kind::ChannelMessage => {
-                                        info!("Subscription by {} ({}): content {:?}, kind {:?}, from pubkey {:?}", key_author, tags, event.content, event.kind, get_contact_alias_or_keystr_by_key(&ap, event.pubkey));
-                                        print_json(
-                                            &json!({
-                                                "event_type": "RelayMessage::Event",
-                                                "event_type_meaning": "Message was received because of subscription.",
-                                                "subscribed_by": key_author,
-                                                "author": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
-                                                "content": event.content,
-                                                "kind": event.kind, // writes integer like '1'
-                                                "kind_text": format!("{:?}",event.kind), // writes text like "Base(TextNote)"
-                                                "from_alias": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
-                                                "from_pubkey": event.pubkey,
-                                                "tags": tags
-                                            }) ,
-                                            ap.output,0,""
-                                        );
-                                    },
-                                    _ => ()
-                                }
-                            },
-                            RelayMessage::EndOfStoredEvents(subscription_id) =>  {
-                                debug!("Received Message-Event EndOfStoredEvents");
-                            },
-                            RelayMessage::Auth { challenge } =>  {
-                                debug!("Received Message-Event Auth");
-                            },
-                            RelayMessage::Count { subscription_id, count } =>  {
-                                debug!("Received Message-Event Count {:?}", count);
-                            },
-                            RelayMessage::Closed { subscription_id, message } => {
-                                debug!("Received Message-Event Closed {:?}", message);
-                            },
-                            RelayMessage::NegMsg { subscription_id, message } => {
-                                debug!("Received Message-Event NegMsg {:?}", message);
-                            },
-                            RelayMessage::NegErr { subscription_id, code } => {
-                                debug!("Received Message-Event NegErr {:?}", code);
-                            },
-                        }
-                    }
+        match client.handle_notifications(|notification| async {
+            debug!("Notification: {:?}", notification);
+            match notification {
+                RelayPoolNotification::Shutdown => {
+                    debug!("Shutdown: shutting down");
+                    // todo: zzz shutdown
+                },
+                RelayStatus { relay_url, status } => {
+                    debug!("Event-RelayStatus: url {:?}, relaystatus {:?}", relay_url, status);
+                },
+                Event { relay_url, subscription_id, event } => {
+                    debug!("Event-Event: url {:?}, content {:?}, kind {:?}", relay_url, event.content, event.kind);
+                },
+                Message {relay_url, message } => {
+                    handle_message(&ap, relay_url, message);
                 }
-                Ok(false)
-            })
-            .await
-        {
+            }
+            Ok(false)
+        }).await {
             Ok(()) => {
                 info!("handle_notifications successful.");
-            }
+            },
             Err(ref e) => {
                 error!("handle_notifications failed. Reported error is: {:?}", e);
             }
@@ -3364,6 +3244,161 @@ async fn main() -> Result<(), Error> {
 
     debug!("Good bye");
     Ok(())
+}
+
+fn handle_event(ap: &Args, event: Box<nostr::event::Event>, subscription_id: SubscriptionId) -> () {
+    // kind: Base(ChannelMessage) and Base(TextNote) and Base(Reaction)
+    let mut tags = "".to_owned();
+    let first = true;
+    for t in &event.tags {
+        match t.kind() {
+            TagKind::SingleLetter(letter) => {
+                trace!("Single Letter tag: {:?}", letter);
+                trace!("Tag vector: {:?}", t.as_vec());
+                //match t.content() {
+                //    Some(c) => {
+                //        trace!("tag: {:?}", get_contact_alias_or_keystr_by_keystr(&ap, c));
+                //        match get_contact_alias_by_keystr(&ap, c) {
+                //            Some(a) => {
+                //                if !first { tags += ", "; };
+                //                tags += &a;
+                //                first = false;
+                //                },
+                //            _ => ()
+                //        }
+                //    }
+                //    None => ()
+                //}
+            },
+            TagKind::Nonce => info!("Nonce message received. Not implemented."),  // todo!(),
+            TagKind::Delegation => info!("Delegation message received. Not implemented."),  // todo!(),
+            TagKind::ContentWarning => info!("ContentWarning message received. Not implemented."),  // todo!(),
+            TagKind::Custom(_) => info!("Custom message received. Not implemented."),  // todo!(),
+            _ => info!("Other message received. Not implemented."),  // todo!(),
+        }
+    }
+    trace!("Message-Event: content {:?}, kind {:?}, from pubkey {:?}, with tags {:?}",
+       event.content,
+       event.kind,
+       get_contact_alias_or_keystr_by_key(&ap, event.pubkey), event.tags
+    );
+    let mut key_author = "key";
+    if is_subscribed_author(&ap, &event.pubkey) {
+        key_author = "author";
+        tags = get_contact_alias_or_keystr_by_key(&ap, event.pubkey);
+    };
+    match event.kind {
+        Kind::ContactList => {
+            debug!("Received Message-Event ContactList");
+        },
+        Kind::Reaction => {
+            debug!("Received Message-Event Reaction: content {:?}", event.content);
+        },
+        Kind::TextNote => {
+            info!(
+                "Subscription by {} ({}): content {:?}, kind {:?}, from pubkey {:?}",
+                key_author,
+                tags,
+                event.content,
+                event.kind,
+                get_contact_alias_or_keystr_by_key(&ap, event.pubkey)
+            );
+            print_json(
+                &json!({
+                    "event_type": "RelayMessage::Event",
+                    "event_type_meaning": "Message was received because of subscription.",
+                    "subscribed_by": key_author,
+                    "author": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
+                    "content": event.content,
+                    "kind": event.kind, // writes integer like '1'
+                    "kind_text": format!("{:?}",event.kind), // writes text like "Base(TextNote)"
+                    "from_alias": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
+                    "from_pubkey": event.pubkey,
+                    "tags": tags
+                }) ,
+                ap.output,0,""
+            );
+        },
+        Kind::ChannelMessage => {
+            info!(
+                "Subscription by {} ({}): content {:?}, kind {:?}, from pubkey {:?}",
+                key_author,
+                tags,
+                event.content,
+                event.kind,
+                get_contact_alias_or_keystr_by_key(&ap, event.pubkey)
+            );
+            print_json(
+                &json!({
+                    "event_type": "RelayMessage::Event",
+                    "event_type_meaning": "Message was received because of subscription.",
+                    "subscribed_by": key_author,
+                    "author": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
+                    "content": event.content,
+                    "kind": event.kind, // writes integer like '1'
+                    "kind_text": format!("{:?}",event.kind), // writes text like "Base(TextNote)"
+                    "from_alias": get_contact_alias_or_keystr_by_key(&ap, event.pubkey),
+                    "from_pubkey": event.pubkey,
+                    "tags": tags
+                }) ,
+                ap.output,0,""
+            );
+        },
+        _ => ()
+    }
+}
+
+fn handle_message(ap: &Args, relay_url: Url, message: RelayMessage) -> () {
+    // debug!("Message: {:?}", message);
+    match message {
+        RelayMessage::Ok {event_id, status, message } => {
+            // Notification: ReceivedMessage(Ok { event_id: 123, status: true, message: "" })
+            // confirmation of notice having been relayed
+            info!(concat!(
+                    r#"Message-OK: Notice, DM or message was relayed. Url is {:?}"#,
+                    r#" Event id is {:?}. Status is {:?} and message is {:?}. You"#,
+                    r#" can investigate this event by looking it up on https://nostr.com/e/{}"#
+                  ),
+                  relay_url, event_id, status, message, event_id.to_string()
+            );
+            print_json(
+                &json!({
+                    "event_type": "RelayMessage::Ok",
+                    "event_type_meaning": "Notice, DM or message was relayed successfully.",
+                    "event_id": event_id,
+                    "status": status,
+                    "message": message,
+                    "event_url": "https://nostr.com/e/".to_string() + &event_id.to_string(),
+                    "event_url_meaning": "You can investigate this event by looking up the event URL.",
+                }),
+                ap.output, 0, ""
+            );
+        },
+        RelayMessage::Notice { message } => {
+            debug!("Message-Notice: {:?}", message);
+        }
+        RelayMessage::Event {event, subscription_id}=> {
+            handle_event(&ap, event, subscription_id);
+        },
+        RelayMessage::EndOfStoredEvents(subscription_id) =>  {
+            debug!("Received Message-Event EndOfStoredEvents");
+        },
+        RelayMessage::Auth { challenge } =>  {
+            debug!("Received Message-Event Auth");
+        },
+        RelayMessage::Count { subscription_id, count } =>  {
+            debug!("Received Message-Event Count {:?}", count);
+        },
+        RelayMessage::Closed { subscription_id, message } => {
+            debug!("Received Message-Event Closed {:?}", message);
+        },
+        RelayMessage::NegMsg { subscription_id, message } => {
+            debug!("Received Message-Event NegMsg {:?}", message);
+        },
+        RelayMessage::NegErr { subscription_id, code } => {
+            debug!("Received Message-Event NegErr {:?}", code);
+        },
+    }
 }
 
 async fn subscribe_to_filter(
@@ -3389,7 +3424,7 @@ async fn subscribe_to_filter(
         filter = filter.until(Timestamp::now() + Duration::new(ap.limit_future_hours * 60 * 60, 0));
     }
     info!("subscribe to {filter_name} initiated.");
-    client.subscribe(vec![filter], None).await;
+    let _ = client.subscribe(vec![filter], None).await;
     info!("subscribe to {filter_name} successful.");
 }
 

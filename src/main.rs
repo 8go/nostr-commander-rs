@@ -1913,6 +1913,26 @@ pub(crate) async fn cli_publish(client: &Client, ap: &mut Args) -> Result<(), Er
     }
 }
 
+async fn send_direct_msg(client: &Client, recipient: PublicKey, line: &str, annotation: &str) -> bool {
+    // Unsecure! Use `send_private_msg` instead.
+    match client.send_direct_msg(recipient, line, None).await {
+        Ok(event_id) => {
+            debug!(
+                "{} sent successfully. {:?}, sent to {:?}, event_id {:?}",
+                annotation, line, recipient, event_id
+            );
+            true
+        },
+        Err(ref e) => {
+            error!(
+                "{} failed. {:?}, sent to {:?}",
+                annotation, line, recipient
+            );
+            false
+        }
+    }
+}
+
 /// Publish DMs.
 pub(crate) async fn send_dms(
     client: &Client,
@@ -1951,42 +1971,11 @@ pub(crate) async fn send_dms(
             }
             line
         } else if note == r"_" {
-            let mut eof = false;
-            while !eof {
-                let mut line = String::new();
-                match io::stdin().read_line(&mut line) {
-                    // If this function returns Ok(0), the stream has reached EOF.
-                    Ok(n) => {
-                        if n == 0 {
-                            eof = true;
-                            debug!("Reached EOF of pipe stream.");
-                        } else {
-                            debug!(
-                                "Read {n} bytes containing \"{}\\n\" from pipe stream.",
-                                trim_newline(&mut line.clone())
-                            );
-                            // Unsecure! Use `send_private_msg` instead.
-                            match client.send_direct_msg(recipient.public_key(), &line, None).await {
-                                Ok(event_id) => debug!(
-                                    "send_direct_msg number {:?} from pipe stream sent successfully. {:?}, sent to {:?}, event_id {:?}",
-                                    i, &line, recipient.public_key(), event_id
-                                ),
-                                Err(ref e) => {
-                                    err_count += 1;
-                                    error!(
-                                        "send_direct_msg number {:?} from pipe stream failed. {:?}, sent to {:?}",
-                                        i, &line, recipient.public_key()
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    Err(ref e) => {
-                        err_count += 1;
-                        error!("Error: reading from pipe stream reported {}", e);
-                    }
-                }
-            }
+            err_count += send_dm_until_eom(
+                client,
+                recipient.public_key(),
+                &format!("send_direct_msg number {:?}", i)
+            ).await;
             "".to_owned()
         } else if note == r"\-" {
             "-".to_string()
@@ -2004,36 +1993,60 @@ pub(crate) async fn send_dms(
             i += 1;
             continue;
         }
-
         // Unsecure! Use `send_private_msg` instead.
-        match client
-            .send_direct_msg(recipient.public_key(), &fnote, None)
-            .await
-        {
-            Ok(ref event_id) => debug!(
-                "DM message number {:?} sent successfully. {:?}, sent to {:?}, event_id {:?}.",
-                i,
-                &fnote,
-                recipient.public_key(),
-                event_id
-            ),
-            Err(ref e) => {
-                err_count += 1;
-                error!(
-                    "DM message number {:?} failed. {:?}, sent to {:?}.",
-                    i,
-                    &fnote,
-                    recipient.public_key()
-                );
-            }
+        match send_direct_msg(
+            client,
+            recipient.public_key(),
+            &fnote,
+            &format!("DM message number {:?}", i)
+        ).await {
+            false => err_count += 1,
+            _ => ()
         }
         i += 1;
     }
-    if err_count != 0 {
-        Err(Error::PublishPowFailed)
-    } else {
-        Ok(())
+    match err_count {
+        0 => Ok(()),
+        _ => Err(Error::DmFailed)
     }
+}
+
+async fn send_dm_until_eom(client: &Client, recipient: PublicKey, annotation: &str) -> usize {
+    let mut err_count = 0usize;
+    let mut eof = false;
+    while !eof {
+        let mut line = String::new();
+        match io::stdin().read_line(&mut line) {
+            // If this function returns Ok(0), the stream has reached EOF.
+            Ok(n) => {
+                if n == 0 {
+                    eof = true;
+                    debug!("Reached EOF of pipe stream.");
+                } else {
+                    debug!(
+                        "Read {n} bytes containing \"{}\\n\" from pipe stream.",
+                        trim_newline(&mut line.clone())
+                    );
+                    // Unsecure! Use `send_private_msg` instead.
+                    //
+                    match send_direct_msg(
+                        client,
+                        recipient,
+                        &line,
+                        annotation,
+                    ).await {
+                        false => err_count += 1,
+                        _ => ()
+                    }
+                }
+            }
+            Err(ref e) => {
+                err_count += 1;
+                error!("Error: reading from pipe stream reported {}", e);
+            }
+        }
+    }
+    err_count
 }
 
 /// Handle the --dm CLI argument
@@ -3231,7 +3244,7 @@ async fn main() -> Result<(), Error> {
                     handle_message(&ap, relay_url, message);
                 }
             }
-            Ok(false)
+            Ok(false) // keep listening, don't exit
         }).await {
             Ok(()) => {
                 info!("handle_notifications successful.");

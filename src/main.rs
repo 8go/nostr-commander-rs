@@ -23,8 +23,6 @@
 use atty::Stream;
 use clap::{ColorChoice, CommandFactory, Parser, ValueEnum};
 use directories::ProjectDirs;
-use chrono::prelude::DateTime;
-use chrono::{Utc, Local};
 use core::cmp::Ordering;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -37,7 +35,7 @@ use std::net::SocketAddr;
 use std::panic;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::time::Duration;
 use thiserror::Error;
 use tracing::{debug, enabled, error, info, trace, warn, Level};
 use tracing_subscriber;
@@ -48,6 +46,7 @@ use nostr_sdk::{
    RelayPoolNotification::{Event, Message, RelayStatus},
 };
 use time::Timestamp;
+use crate::ConnectionMode::{Direct, Proxy};
 
 // /// import nostr-sdk Client related code of general kind: create_user, delete_user, etc // todo
 // mod client; // todo
@@ -1720,8 +1719,13 @@ pub(crate) async fn add_relays_from_creds(client: &mut Client, ap: &mut Args) ->
 }
 
 async fn add_relay(client: &mut Client, url: &Url, proxy: Option<SocketAddr>) -> bool {
-    let options: RelayOptions = RelayOptions::new();
-    let options = options.proxy(proxy.clone());
+    let options = RelayOptions::new();
+    let options = match proxy {
+        Some(address) => {
+            options.connection_mode(Proxy(address))
+        },
+        _ => options.connection_mode(Direct)
+    };
     match client.add_relay_with_opts(url, options).await {
         Ok(value) => {
             let status = if value { "successful" } else { "already added" };
@@ -1913,9 +1917,8 @@ pub(crate) async fn cli_publish(client: &Client, ap: &mut Args) -> Result<(), Er
     }
 }
 
-async fn send_direct_msg(client: &Client, recipient: PublicKey, line: &str, annotation: &str) -> bool {
-    // Unsecure! Use `send_private_msg` instead.
-    match client.send_direct_msg(recipient, line, None).await {
+async fn send_private_msg(client: &Client, recipient: PublicKey, line: &str, annotation: &str) -> bool {
+    match client.send_private_msg(recipient, line, None).await {
         Ok(event_id) => {
             debug!(
                 "{} sent successfully. {:?}, sent to {:?}, event_id {:?}",
@@ -1974,7 +1977,7 @@ pub(crate) async fn send_dms(
             err_count += send_dm_until_eom(
                 client,
                 recipient.public_key(),
-                &format!("send_direct_msg number {:?}", i)
+                &format!("send_private_msg number {:?}", i)
             ).await;
             "".to_owned()
         } else if note == r"\-" {
@@ -1993,8 +1996,7 @@ pub(crate) async fn send_dms(
             i += 1;
             continue;
         }
-        // Unsecure! Use `send_private_msg` instead.
-        match send_direct_msg(
+        match send_private_msg(
             client,
             recipient.public_key(),
             &fnote,
@@ -2027,9 +2029,7 @@ async fn send_dm_until_eom(client: &Client, recipient: PublicKey, annotation: &s
                         "Read {n} bytes containing \"{}\\n\" from pipe stream.",
                         trim_newline(&mut line.clone())
                     );
-                    // Unsecure! Use `send_private_msg` instead.
-                    //
-                    match send_direct_msg(
+                    match send_private_msg(
                         client,
                         recipient,
                         &line,
@@ -2394,7 +2394,7 @@ pub(crate) async fn cli_remove_contact(client: &Client, ap: &mut Args) -> Result
 /// Returns Error if neither valid Bech32, nor Hex key, nor contact alias.
 pub(crate) fn cstr_to_pubkey(ap: &Args, s: &str) -> Result<PublicKey, Error> {
     match get_contact_by_alias(ap, s) {
-        Some(c) => Ok(c.public_key),
+        Some(contact) => Ok(contact.public_key),
         None => str_to_pubkey(s),
     }
 }
@@ -2812,19 +2812,6 @@ pub(crate) fn cli_whoami(ap: &Args) -> Result<(), Error> {
     Ok(())
 }
 
-// todo: make this a trait
-fn date_to_string() -> String {
-    // Creates a new SystemTime from the specified number of whole seconds
-    let d = UNIX_EPOCH + Duration::from_secs(1719238711);
-    // Create DateTime from SystemTime
-    let datetime = DateTime::<Local>::from(d);
-    // Formats the combined date and time with the specified format string.
-    let timestamp_str = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
-    println!{"{}", timestamp_str};
-    timestamp_str
-}
-
-
 /// We need your code contributions! Please add features and make PRs! :pray: :clap:
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -3231,14 +3218,22 @@ async fn main() -> Result<(), Error> {
             debug!("Notification: {:?}", notification);
             match notification {
                 RelayPoolNotification::Shutdown => {
-                    debug!("Shutdown: shutting down");
+                    debug!("Notification-Shutdown: shutting down");
                     // todo: zzz shutdown
                 },
+                RelayPoolNotification::Authenticated { relay_url } => {
+                    debug!("Notification-Authenticated: url {:?}", relay_url);
+                },
                 RelayStatus { relay_url, status } => {
-                    debug!("Event-RelayStatus: url {:?}, relaystatus {:?}", relay_url, status);
+                    debug!("Notification-RelayStatus: url {:?}, relaystatus {:?}", relay_url, status);
                 },
                 Event { relay_url, subscription_id, event } => {
-                    debug!("Event-Event: url {:?}, content {:?}, kind {:?}", relay_url, event.content, event.kind);
+                    debug!(
+                        "Notification-Event: url {:?}, content {:?}, kind {:?}",
+                        relay_url,
+                        event.content,
+                        event.kind
+                    );
                 },
                 Message {relay_url, message } => {
                     handle_message(&ap, relay_url, message);

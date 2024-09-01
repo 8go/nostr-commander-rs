@@ -20,7 +20,7 @@ publish = true
 [dependencies]
 anyhow = "1.0"
 # 0.20
-nostr-sdk = { version = "0.33", features = ["all-nips", "nip04", "nip06"] }
+nostr-sdk = { version = "0.34", features = ["all-nips"] }
 tokio = { version = "1.33", features = ["full"] }
 clap = { version = "4.4", features = ["derive", "color", "wrap_help", "unicode"] }
 thiserror = "1.0"

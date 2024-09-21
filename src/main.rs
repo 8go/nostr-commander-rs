@@ -1678,7 +1678,7 @@ pub(crate) fn cli_create_user(ap: &mut Args) -> Result<(), Error> {
             return Err(Error::KeyFailure);
         }
     }
-    match my_keys.secret_key()?.to_bech32() {
+    match my_keys.secret_key().to_bech32() {
         Ok(k) => ap.creds.secret_key_bech32 = k,
         Err(ref e) => {
             error!(
@@ -1940,7 +1940,7 @@ async fn send_private_msg(client: &Client, recipient: PublicKey, line: &str, ann
 pub(crate) async fn send_dms(
     client: &Client,
     notes: &[String],
-    recipient: &Keys,
+    recipient: PublicKey,
 ) -> Result<(), Error> {
     trace!("send_dms: {:?} {:?}", notes, recipient);
     let mut err_count = 0usize;
@@ -1976,7 +1976,7 @@ pub(crate) async fn send_dms(
         } else if note == r"_" {
             err_count += send_dm_until_eom(
                 client,
-                recipient.public_key(),
+                recipient,
                 &format!("send_private_msg number {:?}", i)
             ).await;
             "".to_owned()
@@ -1998,7 +1998,7 @@ pub(crate) async fn send_dms(
         }
         match send_private_msg(
             client,
-            recipient.public_key(),
+            recipient,
             &fnote,
             &format!("DM message number {:?}", i)
         ).await {
@@ -2058,9 +2058,8 @@ pub(crate) async fn cli_dm(client: &Client, ap: &mut Args) -> Result<(), Error> 
     }
     match cstr_to_pubkey(ap, ap.dm[0].trim()) {
         Ok(pk) => {
-            let keys = Keys::from_public_key(pk);
             let notes = &ap.dm[1..];
-            send_dms(client, notes, &keys).await
+            send_dms(client, notes, pk).await
         }
         Err(ref e) => {
             error!(
@@ -2927,7 +2926,7 @@ async fn main() -> Result<(), Error> {
     if ap.show_secret_key {
         debug!(
             "Loaded secret key in Nostr format is : {:?}",
-            my_keys.secret_key()?.display_secret()
+            my_keys.secret_key().display_secret()
         );
         debug!(
             "Loaded secret key in Bech32 format is: {:?}",
@@ -3262,7 +3261,7 @@ fn handle_event(ap: &Args, event: Box<nostr::event::Event>, subscription_id: Sub
         match t.kind() {
             TagKind::SingleLetter(letter) => {
                 trace!("Single Letter tag: {:?}", letter);
-                trace!("Tag vector: {:?}", t.as_vec());
+                trace!("Tag vector: {:?}", t.as_slice());
                 //match t.content() {
                 //    Some(c) => {
                 //        trace!("tag: {:?}", get_contact_alias_or_keystr_by_keystr(&ap, c));

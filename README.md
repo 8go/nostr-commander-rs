@@ -23,6 +23,7 @@ and much more.
 
 Please help improve the code and add features  :pray:  :clap:
 Any contribution is welcome.
+Thanks to all that have already contributed. Shout out to [@ntheden](https://github.com/ntheden).  
 
 Please give it a star :star: right away on Github so that other people
 can find the project more easily :heart:.

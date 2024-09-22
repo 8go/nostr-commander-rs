@@ -148,22 +148,30 @@ jobs:
           path: |
             ${{ steps.compile2.outputs.BUILT_ARCHIVE }}
             ${{ steps.compile2.outputs.BUILT_CHECKSUM }}
-      - name: Compile
-        id: compile3
-        uses: rust-build/rust-build.action@master
-        with:
-          RUSTTARGET: x86_64-apple-darwin
-          # ARCHIVE_TYPES: tar.gz
-          UPLOAD_MODE: none
-          MINIFY: true
-          EXTRA_FILES: "README.md LICENSE help.help.txt help.manual.txt help.usage.txt"
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: Binary
-          path: |
-            ${{ steps.compile3.outputs.BUILT_ARCHIVE }}
-            ${{ steps.compile3.outputs.BUILT_CHECKSUM }}
+
+      # error: linking with `/opt/osxcross/target/bin/x86_64-apple-darwin14-clang` failed: exit status: 1
+      # = note: env -u IPHONEOS_DEPLOYMENT_TARGET -u TVOS_DEPLOYMENT_TARGET LC_ALL="C" PATH="/usr/local/rustup/toolchains/1.76.0-x86_64-unknown-linux-musl/lib/rustlib/x86_64-unknown-linux-musl/bin:/opt/osxcross/target/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" VSLANG="1033" ZERO_AR_DATE="1" "/opt/osxcross/target/bin/x86_64-apple-darwin14-clang" "-arch" "x86_64" "-m64" "/tmp/rustcMaqGbI/symbols.o" "/github/workspace/./target/x86_64-apple-darwin/release/deps/nostr_commander_rs-d8f4107325f6cff0.nostr_commander_rs.d13df3b232ebb334-cgu.00.rcgu.o" "-L" "/github/workspace/./target/x86_64-apple-darwin/release/deps" "-L" "/github/workspace/./target/release/deps" "-L" "/github/workspace/./target/x86_64-apple-darwin/release/build/ring-d6c03c4e1567ca2d/out" "-L" "/github/workspace/./target/x86_64-apple-darwin/release/build/secp256k1-sys-1f00d2d20ca4260f/out" "-L" "/usr/local/rustup/toolchains/1.76.0-x86_64-unknown-linux-musl/lib/rustlib/x
+      # = note: ld: warning: object file (/tmp/rustcMaqGbI/symbols.o) was built for newer macOS version (10.12) than being linked (10.8)
+      # ld: warning: object file (/github/workspace/./target/x86_64-apple-darwin/release/deps/nostr_commander_rs-d8f4107325f6cff0.nostr_commander_rs.d13df3b232ebb334-cgu.00.rcgu.o) was built for newer macOS version (10.12) than being linked (10.8)
+      # In Sept 2024 linking failed
+
+      # - name: Compile
+      #   id: compile3
+      #   uses: rust-build/rust-build.action@master
+      #   with:
+      #     RUSTTARGET: x86_64-apple-darwin
+      #     # ARCHIVE_TYPES: tar.gz
+      #     UPLOAD_MODE: none
+      #     MINIFY: true
+      #     EXTRA_FILES: "README.md LICENSE help.help.txt help.manual.txt help.usage.txt"
+      # - name: Upload artifact
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: Binary
+      #     path: |
+      #       ${{ steps.compile3.outputs.BUILT_ARCHIVE }}
+      #       ${{ steps.compile3.outputs.BUILT_CHECKSUM }}
+
       - name: Final-check
         run: |
           ls -l
@@ -207,8 +215,8 @@ jobs:
             output/nostr-commander-rs_${{ env.RELEASE_TAG_NAME }}_x86_64-pc-windows-gnu.zip.sha256sum 
             output/nostr-commander-rs_${{ env.RELEASE_TAG_NAME }}_x86_64-unknown-linux-musl.zip 
             output/nostr-commander-rs_${{ env.RELEASE_TAG_NAME }}_x86_64-unknown-linux-musl.zip.sha256sum 
-            output/nostr-commander-rs_${{ env.RELEASE_TAG_NAME }}_x86_64-apple-darwin.zip
-            output/nostr-commander-rs_${{ env.RELEASE_TAG_NAME }}_x86_64-apple-darwin.zip.sha256sum 
+            # output/nostr-commander-rs_${{ env.RELEASE_TAG_NAME }}_x86_64-apple-darwin.zip
+            # output/nostr-commander-rs_${{ env.RELEASE_TAG_NAME }}_x86_64-apple-darwin.zip.sha256sum 
             hel*.txt
 # ${{ steps.compile.outputs.BUILT_ARCHIVE }}
 # ${{ steps.compile.outputs.BUILT_CHECKSUM }}

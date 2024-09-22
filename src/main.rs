@@ -1675,7 +1675,7 @@ pub(crate) fn cli_create_user(ap: &mut Args) -> Result<(), Error> {
             return Err(Error::KeyFailure);
         }
     }
-    match my_keys.secret_key()?.to_bech32() {
+    match my_keys.secret_key().to_bech32() {
         Ok(k) => ap.creds.secret_key_bech32 = k,
         Err(ref e) => {
             error!(
@@ -1716,20 +1716,34 @@ pub(crate) async fn add_relays_from_creds(client: &mut Client, ap: &mut Args) ->
 }
 
 async fn add_relay(client: &mut Client, url: &Url, proxy: Option<SocketAddr>) -> bool {
-    let options: RelayOptions = RelayOptions::new();
-    let options = options.proxy(proxy.clone());
-    match client.add_relay_with_opts(url, options).await {
+    let mut result = Ok(true);
+    match proxy {
+        None => {
+            result = client.add_relay(url).await;
+        }
+        Some(addr) => {
+            let relaypool = client.pool();
+            let mode = ConnectionMode::Proxy(addr);
+            let opts = RelayOptions::new()
+                .connection_mode(mode)
+                .write(false)
+                .retry_sec(11);
+            let result = relaypool.add_relay(url, opts).await;
+        }
+    }
+    match result {
         Ok(value) => {
             let status = if value { "successful" } else { "already added" };
             debug!(
-                "add_relay with relay {:?} with proxy {:?} {}.",
+                "add_relay...() with relay {:?} with proxy {:?}: {}.",
                 url, proxy, status
             );
             true
         }
         Err(ref e) => {
             error!(
-                "Error: add_relay() returned error. Relay {:?} not added. Reported error {:?}.",
+                "Error: add_relay...() returned error. Relay {:?} not added. \
+                    Reported error {:?}.",
                 url, e
             );
             false
@@ -1917,7 +1931,7 @@ pub(crate) async fn cli_publish(client: &Client, ap: &mut Args) -> Result<(), Er
 pub(crate) async fn send_dms(
     client: &Client,
     notes: &[String],
-    recipient: &Keys,
+    recipient: PublicKey,
 ) -> Result<(), Error> {
     trace!("send_dms: {:?} {:?}", notes, recipient);
     let mut err_count = 0usize;
@@ -1966,16 +1980,16 @@ pub(crate) async fn send_dms(
                                 trim_newline(&mut line.clone())
                             );
                             // was send_direct_msg: Unsecure! Use `send_private_msg` instead.
-                            match client.send_private_msg(recipient.public_key(), &line, None).await {
+                            match client.send_private_msg(recipient, &line, None).await {
                                 Ok(event_id) => debug!(
                                     "send_private_msg number {:?} from pipe stream sent successfully. {:?}, sent to {:?}, event_id {:?}",
-                                    i, &line, recipient.public_key(), event_id
+                                    i, &line, recipient, event_id
                                 ),
                                 Err(ref e) => {
                                     err_count += 1;
                                     error!(
                                         "send_private_msg number {:?} from pipe stream failed. {:?}, sent to {:?}",
-                                        i, &line, recipient.public_key()
+                                        i, &line, recipient
                                     );
                                 }
                             }
@@ -2006,24 +2020,16 @@ pub(crate) async fn send_dms(
         }
 
         // was send_direct_msg: Unsecure! Use `send_private_msg` instead.
-        match client
-            .send_private_msg(recipient.public_key(), &fnote, None)
-            .await
-        {
+        match client.send_private_msg(recipient, &fnote, None).await {
             Ok(ref event_id) => debug!(
                 "DM message number {:?} sent successfully. {:?}, sent to {:?}, event_id {:?}.",
-                i,
-                &fnote,
-                recipient.public_key(),
-                event_id
+                i, &fnote, recipient, event_id
             ),
             Err(ref e) => {
                 err_count += 1;
                 error!(
                     "DM message number {:?} failed. {:?}, sent to {:?}.",
-                    i,
-                    &fnote,
-                    recipient.public_key()
+                    i, &fnote, recipient
                 );
             }
         }
@@ -2045,9 +2051,8 @@ pub(crate) async fn cli_dm(client: &Client, ap: &mut Args) -> Result<(), Error> 
     }
     match cstr_to_pubkey(ap, ap.dm[0].trim()) {
         Ok(pk) => {
-            let keys = Keys::from_public_key(pk);
             let notes = &ap.dm[1..];
-            send_dms(client, notes, &keys).await
+            send_dms(client, notes, pk).await
         }
         Err(ref e) => {
             error!(
@@ -2928,7 +2933,7 @@ async fn main() -> Result<(), Error> {
     if ap.show_secret_key {
         debug!(
             "Loaded secret key in Nostr format is : {:?}",
-            my_keys.secret_key()?.display_secret()
+            my_keys.secret_key().display_secret()
         );
         debug!(
             "Loaded secret key in Bech32 format is: {:?}",
@@ -3219,6 +3224,10 @@ async fn main() -> Result<(), Error> {
             .handle_notifications(|notification| async {
                 debug!("Notification: {:?}", notification);
                 match notification {
+                    RelayPoolNotification::Authenticated { relay_url } => {
+                        debug!("Relay Authenticated: relay url {:?}", relay_url);
+                        // todo!()
+                    }
                     RelayPoolNotification::Shutdown => {
                         debug!("Shutdown: shutting down");
                         // todo: zzz shutdown
@@ -3264,7 +3273,7 @@ async fn main() -> Result<(), Error> {
                                 for t in &event.tags {
                                     match t.kind() {
                                         TagKind::SingleLetter(p) => {
-                                            trace!("tag vector: {:?}", t.as_vec());
+                                            trace!("tag vector: {:?}", t.as_slice());
                                             //match t.content() {
                                             //    Some(c) => {
                                             //        trace!("tag: {:?}", get_contact_alias_or_keystr_by_keystr(&ap, c));

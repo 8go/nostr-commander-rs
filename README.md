@@ -63,6 +63,12 @@ nostr-command(lin)er. A word play.
 
 You don't need to know any of this. This is just for the curious ones.
 
+The default location of the config file is
+```
+$HOME/.local/share/nostr-commander-rs/credentials.json
+```
+or equivalent for other platforms.
+
 The config file looks something like this. If you want to do some quick testing, 
 you can copy and paste this config file to get going real fast.
 
@@ -83,27 +89,27 @@ you can copy and paste this config file to get going real fast.
   },
   "contacts": [
     {
-      "pk": "25e5c82273a271cb1a840d0060391a0bf4965cafeb029d5ab55350b418953fbb",
+      "public_key": "25e5c82273a271cb1a840d0060391a0bf4965cafeb029d5ab55350b418953fbb",
       "relay_url": "wss://nostr-pub.wellorder.net/",
       "alias": "Nostr Public Channel"
     },
     {
-      "pk": "887645fef0ce0c3c1218d2f5d8e6132a19304cdc57cd20281d082f38cfea0072",
+      "public_key": "887645fef0ce0c3c1218d2f5d8e6132a19304cdc57cd20281d082f38cfea0072",
       "relay_url": "wss://nostr-pub.wellorder.net/",
       "alias": "HackerNews Public Channel"
     },
     {
-      "pk": "6b0d4c8d9dc59e110d380b0429a02891f1341a0fa2ba1b1cf83a3db4d47e3964",
+      "public_key": "6e468422dfb74a5738702a8823b9b28168abab8655faacb6853cd0ee15deee93",
       "relay_url": "wss://nostr-pub.wellorder.net/",
       "alias": "dergigi"
     },
     {
-      "pk": "3235036bd0957dfb27ccda02d452d7c763be40c91a1ac082ba6983b25238388c",
+      "public_key": "3235036bd0957dfb27ccda02d452d7c763be40c91a1ac082ba6983b25238388c",
       "relay_url": "wss://nostr-pub.wellorder.net/",
       "alias": "vishalxl"
     },
     {
-      "pk": "32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245",
+      "public_key": "32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245",
       "relay_url": "wss://nostr-pub.wellorder.net/",
       "alias": "jb55.com"
     }
@@ -112,7 +118,7 @@ you can copy and paste this config file to get going real fast.
     "3235036bd0957dfb27ccda02d452d7c763be40c91a1ac082ba6983b25238388c"
   ],
   "subscribed_authors": [
-    "6b0d4c8d9dc59e110d380b0429a02891f1341a0fa2ba1b1cf83a3db4d47e3964",
+    "6e468422dfb74a5738702a8823b9b28168abab8655faacb6853cd0ee15deee93",
     "32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245"
   ],
   "subscribed_channels": [

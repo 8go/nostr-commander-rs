@@ -87,8 +87,6 @@ Options:
           Convert one or multiple public keys from Npub to Hex.
       --hex-to-npub [<KEY>...]
           Convert one or multiple public keys from Hex to Npub.
-      --get-pubkey-entity [<KEY>...]
-          Get the entity of one or multiple public keys.
       --subscribe-pubkey [<KEY>...]
           Subscribe to one or more public keys.
       --subscribe-author [<KEY>...]

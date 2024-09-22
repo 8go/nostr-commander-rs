@@ -470,14 +470,6 @@ Options:
           Converts public keys in 'hex' format into the corresponding Bech32
           ('npub1...') format. See also --npub-to-hex
 
-      --get-pubkey-entity [<KEY>...]
-          Get the entity of one or multiple public keys. Details:: This will
-          show you for every public key given if the key represents a Nostr
-          account (usually an individual) or a public Nostr channel. It might
-          also return "Unknown" if the entity of the key cannot be determined.
-          E.g. this can be helpful to determine if you want to use
-          --subscribe-author or --subscribe-channel
-
       --subscribe-pubkey [<KEY>...]
           Subscribe to one or more public keys. Details:: Specify each public
           key in form of 'npub1SomePublicKey'. Alternatively you can use the

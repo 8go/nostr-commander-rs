@@ -21,10 +21,10 @@
 #![allow(unused_imports)] // Todo
 
 use atty::Stream;
-use clap::{ColorChoice, CommandFactory, Parser, ValueEnum};
-use directories::ProjectDirs;
 use chrono::Utc;
+use clap::{ColorChoice, CommandFactory, Parser, ValueEnum};
 use core::cmp::Ordering;
+use directories::ProjectDirs;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -43,9 +43,7 @@ use tracing_subscriber;
 use update_informer::{registry, Check};
 
 use nostr_sdk::prelude::*;
-use nostr_sdk::{
-   RelayPoolNotification::{Event, Message, RelayStatus},
-};
+use nostr_sdk::RelayPoolNotification::{Event, Message, RelayStatus};
 
 // /// import nostr-sdk Client related code of general kind: create_user, delete_user, etc // todo
 // mod client; // todo
@@ -1713,7 +1711,7 @@ pub(crate) async fn add_relays_from_creds(client: &mut Client, ap: &mut Args) ->
     }
     match err_count {
         0 => Ok(()),
-        _ => Err(Error::AddRelayFailed)
+        _ => Err(Error::AddRelayFailed),
     }
 }
 
@@ -1728,7 +1726,7 @@ async fn add_relay(client: &mut Client, url: &Url, proxy: Option<SocketAddr>) ->
                 url, proxy, status
             );
             true
-        },
+        }
         Err(ref e) => {
             error!(
                 "Error: add_relay() returned error. Relay {:?} not added. Reported error {:?}.",
@@ -1743,17 +1741,21 @@ async fn add_relay(client: &mut Client, url: &Url, proxy: Option<SocketAddr>) ->
 /// Add relays from --add-relay.
 pub(crate) async fn cli_add_relay(client: &mut Client, ap: &mut Args) -> Result<(), Error> {
     let mut err_count = 0u32;
-    let urls: Vec<&Url> = ap.add_relay.iter().filter_map(|url| match is_relay_url(url) {
-        true => Some(url),
-        false => {
-            err_count += 1;
-            error!(
-                "Error: Relay {:?} is syntactically not correct. Relay not added.",
-                url,
-            );
-            None
-        }
-    }).collect();
+    let urls: Vec<&Url> = ap
+        .add_relay
+        .iter()
+        .filter_map(|url| match is_relay_url(url) {
+            true => Some(url),
+            false => {
+                err_count += 1;
+                error!(
+                    "Error: Relay {:?} is syntactically not correct. Relay not added.",
+                    url,
+                );
+                None
+            }
+        })
+        .collect();
 
     for url in urls {
         match add_relay(client, url, ap.proxy).await {
@@ -1780,7 +1782,7 @@ pub(crate) async fn cli_add_relay(client: &mut Client, ap: &mut Args) -> Result<
 
     match err_count {
         0 => Ok(()),
-        _ => Err(Error::AddRelayFailed)
+        _ => Err(Error::AddRelayFailed),
     }
 }
 
@@ -1963,16 +1965,16 @@ pub(crate) async fn send_dms(
                                 "Read {n} bytes containing \"{}\\n\" from pipe stream.",
                                 trim_newline(&mut line.clone())
                             );
-                            // Unsecure! Use `send_private_msg` instead.
-                            match client.send_direct_msg(recipient.public_key(), &line, None).await {
+                            // was send_direct_msg: Unsecure! Use `send_private_msg` instead.
+                            match client.send_private_msg(recipient.public_key(), &line, None).await {
                                 Ok(event_id) => debug!(
-                                    "send_direct_msg number {:?} from pipe stream sent successfully. {:?}, sent to {:?}, event_id {:?}",
+                                    "send_private_msg number {:?} from pipe stream sent successfully. {:?}, sent to {:?}, event_id {:?}",
                                     i, &line, recipient.public_key(), event_id
                                 ),
                                 Err(ref e) => {
                                     err_count += 1;
                                     error!(
-                                        "send_direct_msg number {:?} from pipe stream failed. {:?}, sent to {:?}",
+                                        "send_private_msg number {:?} from pipe stream failed. {:?}, sent to {:?}",
                                         i, &line, recipient.public_key()
                                     );
                                 }
@@ -2003,9 +2005,9 @@ pub(crate) async fn send_dms(
             continue;
         }
 
-        // Unsecure! Use `send_private_msg` instead.
+        // was send_direct_msg: Unsecure! Use `send_private_msg` instead.
         match client
-            .send_direct_msg(recipient.public_key(), &fnote, None)
+            .send_private_msg(recipient.public_key(), &fnote, None)
             .await
         {
             Ok(ref event_id) => debug!(
@@ -2063,22 +2065,31 @@ async fn send_channel_message(
     channel_id: &PublicKey,
     relay_url: &Url,
     line: &str,
-    annotation: &str
+    annotation: &str,
 ) -> bool {
     let tags: Vec<Tag> = vec![]; // TODO: add relay_url tag
-    let event_id = EventId::new(&channel_id.clone(), &Timestamp::now(), &Kind::ChannelMessage, &tags, line);
+    let event_id = EventId::new(
+        &channel_id.clone(),
+        &Timestamp::now(),
+        &Kind::ChannelMessage,
+        &tags,
+        line,
+    );
     //created_at: &Timestamp,
     //kind: &Kind,
     //tags: &[Tag],
     //content: &str,
-    match client.send_channel_msg(event_id, relay_url.clone(), line).await {
+    match client
+        .send_channel_msg(event_id, relay_url.clone(), line)
+        .await
+    {
         Ok(ref event_id) => {
             debug!(
                 "send_channel_msg number {} sent successfully. {:?}, sent to {:?}, event_id is {:?}",
                 annotation, line, &channel_id, event_id
             );
             true
-        },
+        }
         Err(ref e) => {
             error!(
                 "send_channel_msg number {} failed. {:?}, sent to {:?}, error is {:?}",
@@ -2148,7 +2159,9 @@ pub(crate) async fn send_channel_messages(
                                 &relay_url,
                                 &line,
                                 &format!("{} from pipe stream", i),
-                            ).await {
+                            )
+                            .await
+                            {
                                 false => err_count += 1,
                                 _ => (),
                             }
@@ -2178,13 +2191,8 @@ pub(crate) async fn send_channel_messages(
             continue;
         }
 
-        match send_channel_message(
-            client,
-            &channel_id,
-            &relay_url,
-            &fnote,
-            &format!("{}", i),
-        ).await {
+        match send_channel_message(client, &channel_id, &relay_url, &fnote, &format!("{}", i)).await
+        {
             false => err_count += 1,
             _ => (),
         }
@@ -2247,7 +2255,11 @@ pub(crate) fn get_contact_by_alias(ap: &Args, alias: &str) -> Option<Contact> {
 /// Get contact for given pubkey.
 /// Returns None if pubkey does not exist in contact list.
 pub(crate) fn get_contact_by_key(ap: &Args, pkey: PublicKey) -> Option<Contact> {
-    ap.creds.contacts.iter().find(|s| s.public_key == pkey).cloned()
+    ap.creds
+        .contacts
+        .iter()
+        .find(|s| s.public_key == pkey)
+        .cloned()
 }
 
 /// Get contact alias for given pubkey, or if not in contacts return given pubkey.
@@ -3132,7 +3144,7 @@ async fn main() -> Result<(), Error> {
         }
     }
     if !ap.creds.subscribed_pubkeys.is_empty() && ap.listen {
-        let mut filter = Filter::new().pubkeys(ap.creds.subscribed_pubkeys.clone());
+        let filter = Filter::new().pubkeys(ap.creds.subscribed_pubkeys.clone());
         subscribe_to_filter(&client, &ap, filter, "keys").await;
     }
     // Subscribe authors
@@ -3147,7 +3159,7 @@ async fn main() -> Result<(), Error> {
         }
     }
     if !ap.creds.subscribed_authors.is_empty() && ap.listen {
-        let mut filter = Filter::new().authors(ap.creds.subscribed_authors.clone());
+        let filter = Filter::new().authors(ap.creds.subscribed_authors.clone());
         subscribe_to_filter(&client, &ap, filter, "authors").await;
     }
     // Subscribe channels
@@ -3173,7 +3185,7 @@ async fn main() -> Result<(), Error> {
         }
     }
     if !ap.creds.subscribed_channels.is_empty() && ap.listen {
-        let mut filter = Filter::new().pubkeys(ap.creds.subscribed_channels.clone());
+        let filter = Filter::new().pubkeys(ap.creds.subscribed_channels.clone());
         subscribe_to_filter(&client, &ap, filter, "channels").await;
     }
     ap.creds.save(get_credentials_actual_path(&ap))?;
@@ -3251,7 +3263,7 @@ async fn main() -> Result<(), Error> {
                                 let first = true;
                                 for t in &event.tags {
                                     match t.kind() {
-                                        TagKind::SingleLetter(P) => {
+                                        TagKind::SingleLetter(p) => {
                                             trace!("tag vector: {:?}", t.as_vec());
                                             //match t.content() {
                                             //    Some(c) => {
@@ -3268,7 +3280,7 @@ async fn main() -> Result<(), Error> {
                                             //    None => ()
                                             //}
                                         },
-                                        TagKind::SingleLetter(E) => info!("E message received. Not implemented."),  // todo!(),
+                                        // TagKind::SingleLetter(e) => info!("Single letter message received. Not implemented. {:?}",e),  // todo!(),
                                         TagKind::Nonce => info!("Nonce message received. Not implemented."),  // todo!(),
                                         TagKind::Delegation => info!("Delegation message received. Not implemented."),  // todo!(),
                                         TagKind::ContentWarning => info!("ContentWarning message received. Not implemented."),  // todo!(),
@@ -3366,12 +3378,7 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn subscribe_to_filter(
-    client: &Client,
-    ap: &Args,
-    mut filter: Filter,
-    filter_name: &str
-) {
+async fn subscribe_to_filter(client: &Client, ap: &Args, mut filter: Filter, filter_name: &str) {
     if ap.limit_number != 0 {
         filter = filter.limit(ap.limit_number);
     }
@@ -3389,8 +3396,10 @@ async fn subscribe_to_filter(
         filter = filter.until(Timestamp::now() + Duration::new(ap.limit_future_hours * 60 * 60, 0));
     }
     info!("subscribe to {filter_name} initiated.");
-    client.subscribe(vec![filter], None).await;
-    info!("subscribe to {filter_name} successful.");
+    match client.subscribe(vec![filter], None).await {
+        Ok(..) => info!("subscribe to {filter_name} successful."),
+        Err(ref e) => error!("handle_notifications failed. Reported error is: {:?}", e),
+    }
 }
 
 /// Future test cases will be put here

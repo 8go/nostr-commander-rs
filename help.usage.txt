@@ -41,7 +41,6 @@ Options:
       --relay [<RELAY>...]
       --npub-to-hex [<KEY>...]
       --hex-to-npub [<KEY>...]
-      --get-pubkey-entity [<KEY>...]
       --subscribe-pubkey [<KEY>...]
       --subscribe-author [<KEY>...]
       --subscribe-channel [<HASH>...]

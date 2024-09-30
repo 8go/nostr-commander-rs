@@ -148,9 +148,11 @@ $ nostr-commander-rs --subscribe-channel 25e5c82273a271cb1a840d0060391a0bf4965ca
 ```
 Welcome to "nostr-commander-rs", a Nostr CLI client. ─── On the first run use
 --create-user to create a user. On further runs you can publish notes, send
-private DM messages, etc.  ─── Have a look at the repo
-"https://github.com/8go/nostr-commander-rs/" and see if you can contribute code
-to improve this tool. Safe!
+private DM messages, etc. Alternatively, you can skip creating a user and do a
+fire-and-forget publish like this: nostr-commander-rs --nsec
+nsec1SomeStrangeString --add-relay "wss://some.relay.net/" --publish "test".
+─── Have a look at the repo "https://github.com/8go/nostr-commander-rs/" and
+see if you can contribute code to improve this tool. Safe!
 
 Usage: nostr-commander-rs [OPTIONS]
 
@@ -236,9 +238,10 @@ Options:
           Create a new user, i.e. a new key pair. Details:: This is usually
           done only once at the beginning. If you ever want to wipe this user,
           use '--delete-user' which deletes the key pair. Use this option in
-          combination with --name, --display_name, --about, --picture, and
-          --nip05. Also highly recommended that you use this option together
-          with --add-relay
+          combination with --name, --display_name, --about, --picture, --nip05,
+          and --nsec. Also highly recommended that you use this option together
+          with --add-relay. Add --nsec as option to import your existing nsec
+          private key, otherwise a new private key will be generated for you
 
       --delete-user
           Delete the current user, i.e. delete the current key pair. Details::
@@ -277,6 +280,18 @@ Options:
           this option is not set during '--create-user', the information will
           be queried via the keyboard. If you want to set it to empty and not
           be queried, provide an empty string ''
+
+      --nsec <PRIVATE_KEY>
+          Provide one private key. Details:: It has the form
+          'nsec1SomeStrangeString'. Alternatively you can use the Hex form of
+          the private key. Since this is your private key, you must protect it.
+          Don't put this key into a script, into Github, etc. If --nsec is
+          provided it will be used instead of the private key in the
+          credentials file. This argument is used e.g. in combination with
+          argument --publish. If you are using --nsec without a credentials
+          file most likely you want to also use -ad-relay argument. If --nsec
+          is used without --create-user then the credentials file will not be
+          modified or will not be created
 
   -p, --publish [<NOTE>...]
           Publish one or multiple notes. Details:: Notes data must not be

@@ -1,8 +1,10 @@
 Welcome to "nostr-commander-rs", a Nostr CLI client. ─── On the first run use
 --create-user to create a user. On further runs you can publish notes, send
-private DM messages, etc.  ─── Have a look at the repo
-"https://github.com/8go/nostr-commander-rs/" and see if you can contribute code
-to improve this tool. Safe!
+private DM messages, etc. Alternatively, you can skip creating a user and do a
+fire-and-forget publish like this: nostr-commander-rs --nsec
+nsec1SomeStrangeString --add-relay "wss://some.relay.net/" --publish "test".
+─── Have a look at the repo "https://github.com/8go/nostr-commander-rs/" and
+see if you can contribute code to improve this tool. Safe!
 Usage: nostr-commander-rs [OPTIONS]
 Options:
       --contribute
@@ -39,6 +41,8 @@ Options:
           Specify an optional picture or avatar.
       --nip05 <NIP05_ID>
           Specify an optional nip05 name.
+      --nsec <PRIVATE_KEY>
+          Provide one private key.
   -p, --publish [<NOTE>...]
           Publish one or multiple notes.
       --publish-pow [<NOTE>...]

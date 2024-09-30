@@ -17,6 +17,7 @@ Options:
       --about <DESCRIPTION>
       --picture <URL>
       --nip05 <NIP05_ID>
+      --nsec <PRIVATE_KEY>
   -p, --publish [<NOTE>...]
       --publish-pow [<NOTE>...]
       --dm [<KEY+MSGS>...]

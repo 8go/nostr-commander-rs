@@ -324,7 +324,11 @@ impl fmt::Display for Output {
 /// Welcome to "nostr-commander-rs", a Nostr CLI client. ───
 /// On the first run use --create-user to create a user.
 /// On further runs you can publish notes, send private DM messages,
-/// etc.  ───
+/// etc.
+/// Alternatively, you can skip creating a user and do a fire-and-forget
+/// publish like this: nostr-commander-rs --nsec nsec1SomeStrangeString --add-relay
+/// "wss://some.relay.net/" --publish "test".
+///   ───
 /// Have a look at the repo "https://github.com/8go/nostr-commander-rs/"
 /// and see if you can contribute code to improve this tool.
 /// Safe!
@@ -451,9 +455,13 @@ pub struct Args {
     /// done only once at the beginning. If you ever want to wipe
     /// this user, use '--delete-user' which deletes the key
     /// pair. Use this option in combination with --name,
-    ///  --display_name, --about, --picture, and --nip05.
+    ///  --display_name, --about, --picture, --nip05, and
+    /// --nsec.
     /// Also highly recommended that you use this option
     /// together with --add-relay.
+    /// Add --nsec as option to import your existing nsec
+    /// private key, otherwise a new private key will be
+    /// generated for you.
     #[arg(long, alias = "create-key", default_value_t = false)]
     create_user: bool,
 
@@ -514,6 +522,22 @@ pub struct Args {
     /// and not be queried, provide an empty string ''.
     #[arg(long, value_name = "NIP05_ID")]
     nip05: Option<String>,
+
+    /// Provide one private key.
+    /// Details:: It has the form 'nsec1SomeStrangeString'.
+    /// Alternatively you can use the Hex form of the private key.
+    /// Since this is your private key, you must protect it. Don't put
+    /// this key into a script, into Github, etc.
+    /// If --nsec is provided it will be used instead of the private key in
+    /// the credentials file.
+    /// This argument is used e.g. in combination with argument
+    /// --publish.
+    /// If you are using --nsec without a credentials file most likely
+    /// you want to also use -ad-relay argument.
+    /// If --nsec is used without --create-user then the credentials
+    /// file will not be modified or will not be created.
+    #[arg(long, value_name = "PRIVATE_KEY")]
+    nsec: Option<String>,
 
     /// Publish one or multiple notes.
     /// Details::
@@ -884,6 +908,7 @@ impl Args {
             about: None,
             picture: None,
             nip05: None,
+            nsec: None,
             publish: Vec::new(),
             publish_pow: Vec::new(),
             dm: Vec::new(),
@@ -1525,11 +1550,15 @@ pub(crate) fn read_credentials(ap: &mut Args) -> Result<(), Error> {
             return Ok(());
         }
         Err(ref e) => {
-            error!(
-                "Error: failed to read credentials file {:?}. Aborting. Correct path? Error reported: {:?}.",
-                get_credentials_actual_path(&ap),
-                e,
-            );
+            if ap.nsec.is_some() {
+                debug!("no credentials file found or read")
+            } else {
+                error!(
+                    "Error: failed to read credentials file {:?}. Correct path? Error reported: {:?}.",
+                    get_credentials_actual_path(&ap),
+                    e,
+                );
+            };
             return Err(Error::StorageFailure);
         }
     }
@@ -1661,8 +1690,16 @@ pub(crate) fn cli_create_user(ap: &mut Args) -> Result<(), Error> {
     }
     ap.creds.relays.dedup_by(|a, b| a.url == b.url);
 
-    // Generate new keys
-    let my_keys: Keys = Keys::generate();
+    let my_keys: Keys = if ap.nsec.is_some() {
+        // nsec key provided as argument, import it
+        // parses from bech32 as well as from hex
+        debug!("Importing private key from --nsec argument");
+        Keys::new(SecretKey::parse(ap.nsec.clone().unwrap())?)
+    } else {
+        // Generate new keys
+        debug!("A new private key is being generated for you");
+        Keys::generate()
+    };
     debug!("Generated private key is: {:?}", my_keys.secret_key());
     debug!("Generated public  key is: {:?}", my_keys.public_key());
     match my_keys.public_key().to_bech32() {
@@ -1778,20 +1815,25 @@ pub(crate) async fn cli_add_relay(client: &mut Client, ap: &mut Args) -> Result<
         }
     }
 
-    match ap.creds.save(get_credentials_actual_path(ap)) {
-        Ok(()) => {
-            debug!(
-                "writing new relays {:?} to credentials file successful.",
-                ap.creds.relays
-            );
+    if ap.nsec.is_none() || ap.create_user {
+        debug!("Creating or updating credentials file to add new relays.");
+        match ap.creds.save(get_credentials_actual_path(ap)) {
+            Ok(()) => {
+                debug!(
+                    "writing new relays {:?} to credentials file successful.",
+                    ap.creds.relays
+                );
+            }
+            Err(ref e) => {
+                error!(
+                    "Error: writing new relays {:?} to credentials file failed. Reported error {:?}.",
+                    ap.creds.relays, e
+                );
+                err_count += 1;
+            }
         }
-        Err(ref e) => {
-            error!(
-                "Error: writing new relays {:?} to credentials file failed. Reported error {:?}.",
-                ap.creds.relays, e
-            );
-            err_count += 1;
-        }
+    } else {
+        debug!("Not creating or not updating credentials file with new relays.")
     }
 
     match err_count {
@@ -2904,13 +2946,24 @@ async fn main() -> Result<(), Error> {
     } else {
         match crate::read_credentials(&mut ap) {
             Ok(()) => {
-                info!("User created successfully.");
+                info!("User credentials read successfully.");
             }
             Err(ref e) => {
-                error!("Credentials file does not exists or cannot be read. Try creating a user first with --create-user. Check your arguments and try again. Worst case if file is corrupted or lost, consider doing a '--delete-user' to clean up, then perform a new '--create-user'. {:?}.", e);
-                return Err(Error::ReadingCredentialsFailed);
+                if ap.nsec.is_some() {
+                    debug!("User id will be taken from --nsec argument.");
+                } else {
+                    error!("Credentials file does not exists or cannot be read. Try creating a user first with --create-user. Check your arguments and try again. Worst case if file is corrupted or lost, consider doing a '--delete-user' to clean up, then perform a new '--create-user'. {:?}.", e);
+                    return Err(Error::ReadingCredentialsFailed);
+                }
             }
         }
+    }
+    if ap.nsec.is_some() {
+        debug!("We use private and public key from --nsec argument.");
+        // parses from bech32 as well as from hex
+        let my_keys = Keys::parse(&ap.nsec.clone().unwrap())?;
+        ap.creds.public_key_bech32 = my_keys.public_key().to_bech32().unwrap();
+        ap.creds.secret_key_bech32 = my_keys.secret_key().to_bech32().unwrap();
     }
     // credentials are filled now
 
@@ -3029,6 +3082,9 @@ async fn main() -> Result<(), Error> {
         info!("initiating connect now.");
         client.connect().await;
         info!("connect successful.");
+        if client.relays().await.is_empty() {
+            error!("Client has no relay. Certain operations will fail. Consider using --add-relay argument.")
+        }
         is_connected = true;
     }
 
@@ -3193,7 +3249,12 @@ async fn main() -> Result<(), Error> {
         let filter = Filter::new().pubkeys(ap.creds.subscribed_channels.clone());
         subscribe_to_filter(&client, &ap, filter, "channels").await;
     }
-    ap.creds.save(get_credentials_actual_path(&ap))?;
+    if ap.nsec.is_none() || ap.create_user {
+        debug!("Creating or updating credentials file.");
+        ap.creds.save(get_credentials_actual_path(&ap))?;
+    } else {
+        debug!("Not creating or not updating credentials file.")
+    }
 
     // notices will be published even if we do not go into handle_notification event loop
     // Design choice: Do not automatically listen when subscriptions exist, only listen to subscriptions if --listen is set.

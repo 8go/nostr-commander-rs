@@ -59,7 +59,20 @@ nostr-command(lin)er. A word play.
     - Once program is compiled, the executable will be available in target/release/nostr-commander-rs.
         - `./target/release/nostr-commander-rs --version # run it and get version`
 
+# No Config File
+
+If desired, you can work without a config file. If you already have a private key (nsec)
+then you can do simple commands like this:
+
+E.g. fire-and-forget: send a message without a config file and forget everything after message has been sent:
+
+- `nostr-commander-rs --nsec nsec1SomeStrangeString --add-relay "wss://some.relay.net/" --publish "some text"`
+- `nostr-commander-rs --nsec $NSEC --add-relay "wss://some.relay.net/" --publish - < SOMETEXTFILE.txt`
+
 # Config File
+
+For more functionality or in order to create a new user you will want to 
+work with a simple JSON credentials file. 
 
 You don't need to know any of this. This is just for the curious ones.
 
@@ -70,7 +83,7 @@ $HOME/.local/share/nostr-commander-rs/credentials.json
 or equivalent for other platforms.
 
 The config file looks something like this. If you want to do some quick testing, 
-you can copy and paste this config file to get going real fast.
+you can copy and paste this config file to get going fast.
 
 ```
 {

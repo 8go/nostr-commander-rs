@@ -39,7 +39,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use thiserror::Error;
 use tracing::{debug, enabled, error, info, trace, warn, Level};
-use tracing_subscriber;
+use tracing_subscriber::EnvFilter;
 use update_informer::{registry, Check};
 
 use nostr_sdk::prelude::*;
@@ -61,6 +61,8 @@ const PKG_NAME: &str = "nostr-commander";
 const BIN_NAME_O: Option<&str> = option_env!("CARGO_BIN_NAME");
 /// fallback if static compile time value is None
 const BIN_NAME: &str = "nostr-commander-rs";
+/// fallback if static compile time value is None
+const BIN_NAME_UNDERSCORE: &str = "nostr_commander_rs";
 /// he repo name from Cargo.toml at compile time,
 /// e.g. string `https://github.com/8go/nostr-commander-rs/`
 const PKG_REPOSITORY_O: Option<&str> = option_env!("CARGO_PKG_REPOSITORY");
@@ -150,8 +152,8 @@ pub enum Error {
     #[error("Unknown CLI parameter")]
     UnknownCliParameter,
 
-    #[error("Unsupported CLI parameter")]
-    UnsupportedCliParameter,
+    #[error("Unsupported CLI parameter: {0}")]
+    UnsupportedCliParameter(&'static str),
 
     #[error("Missing User")]
     MissingUser,
@@ -396,6 +398,11 @@ pub struct Args {
     /// If used, log level will be set to 'DEBUG' and debugging information
     /// will be printed.
     /// '-d' is a shortcut for '--log-level DEBUG'.
+    /// If used once as in '-d' it will set and/or overwrite
+    /// --log-level to '--log-level debug'.
+    /// If used twice as in '-d -d' it will set and/or overwrite
+    /// --log-level to '--log-level debug debug'.
+    /// And third or futher occurance of '-d' will be ignored.
     /// See also '--log-level'. '-d' takes precedence over '--log-level'.
     /// Additionally, have a look also at the option '--verbose'.
     #[arg(short, long,  action = clap::ArgAction::Count, default_value_t = 0u8, )]
@@ -405,11 +412,23 @@ pub struct Args {
     /// Details::
     /// If not used, then the default
     /// log level set with environment variable 'RUST_LOG' will be used.
+    /// If used with one value specified this value is assigned to the
+    /// log level of matrix-commander-rs.
+    /// If used with two values specified the first value is assigned to the
+    /// log level of matrix-commander-rs. The second value is asigned to the
+    /// lower level modules.
+    /// More than two values should not be specified.
+    /// --debug overwrites -log-level.
     /// See also '--debug' and '--verbose'.
+    /// Alternatively you can use the RUST_LOG environment variable.
+    /// An example use of RUST_LOG is to use neither --log-level nor --debug,
+    /// and to set RUST_LOG="error,matrix_commander_rs=debug" which turns
+    /// off debugging on all lower level modules and turns debugging on only
+    /// for matrix-commander-rs.
     // Possible values are
     // '{trace}', '{debug}', '{info}', '{warn}', and '{error}'.
-    #[arg(long, value_enum, default_value_t = LogLevel::default(), ignore_case = true, )]
-    log_level: LogLevel,
+    #[arg(long, value_delimiter = ' ', num_args = 1..3, ignore_case = true, )]
+    log_level: Option<Vec<LogLevel>>,
 
     /// Set the verbosity level.
     /// Details::
@@ -896,7 +915,7 @@ impl Args {
             contribute: false,
             version: None,
             debug: 0u8,
-            log_level: LogLevel::None,
+            log_level: None,
             verbose: 0u8,
             // plain: false,
             // credentials file path
@@ -982,7 +1001,7 @@ impl Relay {
 /// future access.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Credentials {
-    secret_key_bech32: String, // nsec1...// private key
+    secret_key_bech32: String, // nsec1...// private_key
     public_key_bech32: String, // npub1...
     relays: Vec<Relay>,
     metadata: Metadata,
@@ -1591,7 +1610,7 @@ pub(crate) fn is_relay_url(relay: &Url) -> bool {
 /// Handle the --create_user CLI argument
 pub(crate) fn cli_create_user(ap: &mut Args) -> Result<(), Error> {
     if !ap.create_user {
-        return Err(Error::UnsupportedCliParameter);
+        return Err(Error::MissingCliParameter);
     }
     if credentials_exist(ap) {
         error!(concat!(
@@ -2874,34 +2893,100 @@ async fn main() -> Result<(), Error> {
 
     // handle log level and debug options
     let env_org_rust_log = env::var("RUST_LOG").unwrap_or_default().to_uppercase();
-    // eprintln!("Original log_level option is {:?}", ap.log_level);
-    // eprintln!("Original RUST_LOG is {:?}", &env_org_rust_log);
+    // println!("Original log_level option is {:?}", ap.log_level);
+    // println!("Original RUST_LOG is {:?}", &env_org_rust_log);
+    match ap.debug.cmp(&1) {
+        Ordering::Equal => {
+            // -d overwrites --log-level
+            let llvec = vec![LogLevel::Debug];
+            ap.log_level = Some(llvec);
+        }
+        Ordering::Greater => {
+            // -d overwrites --log-level
+            let mut llvec = vec![LogLevel::Debug];
+            llvec.push(LogLevel::Debug);
+            ap.log_level = Some(llvec);
+        }
+        Ordering::Less => (),
+    }
+    match ap.log_level.clone() {
+        None => {
+            tracing_subscriber::fmt()
+                .with_writer(io::stderr)
+                .with_env_filter(EnvFilter::from_default_env()) // support the standard RUST_LOG env variable
+                .init();
+            debug!("Neither --debug nor --log-level was used. Using environment vaiable RUST_LOG.");
+        }
+        Some(llvec) => {
+            if llvec.len() == 1 {
+                if llvec[0].is_none() {
+                    return Err(Error::UnsupportedCliParameter(
+                        "Value 'none' not allowed for --log-level argument",
+                    ));
+                }
+                // .with_env_filter("matrix_commander_rs=debug") // only set matrix_commander_rs
+                let mut rlogstr: String = BIN_NAME_UNDERSCORE.to_owned();
+                rlogstr.push('='); // add char
+                rlogstr.push_str(&llvec[0].to_string());
+                tracing_subscriber::fmt()
+                    .with_writer(io::stderr)
+                    .with_env_filter(rlogstr.clone()) // support the standard RUST_LOG env variable for default value
+                    .init();
+                debug!(
+                    "The --debug or --log-level was used once or with one value. \
+                    Specifying logging equivalent to RUST_LOG seting of '{}'.",
+                    rlogstr
+                );
+            } else {
+                if llvec[0].is_none() || llvec[1].is_none() {
+                    return Err(Error::UnsupportedCliParameter(
+                        "Value 'none' not allowed for --log-level argument",
+                    ));
+                }
+                // RUST_LOG="error,matrix_commander_rs=debug"  .. This will only show matrix-comander-rs
+                // debug info, and erors for all other modules
+                let mut rlogstr: String = llvec[1].to_string().to_owned();
+                rlogstr.push(','); // add char
+                rlogstr.push_str(BIN_NAME_UNDERSCORE);
+                rlogstr.push('=');
+                rlogstr.push_str(&llvec[0].to_string());
+                tracing_subscriber::fmt()
+                    .with_writer(io::stderr)
+                    .with_env_filter(rlogstr.clone())
+                    .init();
+                debug!(
+                    "The --debug or --log-level was used twice or with two values. \
+                    Specifying logging equivalent to RUST_LOG seting of '{}'.",
+                    rlogstr
+                );
+            }
+            if llvec.len() > 2 {
+                debug!("The --log-level option was incorrectly used more than twice. Ignoring third and further use.")
+            }
+        }
+    }
     if ap.debug > 0 {
-        // -d overwrites --log-level
-        ap.log_level = LogLevel::Debug
+        info!("The --debug option overwrote the --log-level option.")
     }
-    if ap.log_level.is_none() {
-        ap.log_level = LogLevel::from_str(&env_org_rust_log, true).unwrap_or(LogLevel::Error);
+    if ap.debug > 2 {
+        debug!("The --debug option was incorrectly used more than twice. Ignoring third and further use.")
     }
-    // overwrite environment variable, important because it might have been empty/unset
-    env::set_var("RUST_LOG", ap.log_level.to_string());
-
-    // set log level e.g. via RUST_LOG=DEBUG cargo run, use newly set venv var value
-    // Send *all* output from Debug to Error to stderr
-    tracing_subscriber::fmt()
-        .with_writer(io::stderr)
-        .with_max_level(Level::from_str(&ap.log_level.to_string()).unwrap_or(Level::ERROR))
-        .init();
-    debug!("Original RUST_LOG env var is {}", env_org_rust_log);
+    debug!("Original RUST_LOG env var is '{}'", env_org_rust_log);
     debug!(
-        "Final RUST_LOG env var is {}",
+        "Final RUST_LOG env var is '{}'",
         env::var("RUST_LOG").unwrap_or_default().to_uppercase()
     );
-    debug!("Final log_level option is {:?}", ap.log_level);
+    debug!("Final log-level option is {:?}", ap.log_level);
     if enabled!(Level::TRACE) {
-        debug!("Log level is set to TRACE.");
+        debug!(
+            "Log level of module {} is set to TRACE.",
+            get_prog_without_ext()
+        );
     } else if enabled!(Level::DEBUG) {
-        debug!("Log level is set to DEBUG.");
+        debug!(
+            "Log level of module {} is set to DEBUG.",
+            get_prog_without_ext()
+        );
     }
     debug!("Version is {}", get_version());
     debug!("Package name is {}", get_pkg_name());

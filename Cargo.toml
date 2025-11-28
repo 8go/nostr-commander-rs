@@ -4,7 +4,7 @@
 name = "nostr-commander"
 version = "0.3.1"
 edition = "2021"
-description = "simple but convenient CLI-based Nostr client app for publishing,sending and subscribing"
+description = "simple but convenient CLI-based Nostr client app for publishing, sending and subscribing"
 documentation = "https://docs.rs/nostr-commander"
 readme = "README.md"
 homepage = "https://github.com/8go/nostr-commander-rs"
